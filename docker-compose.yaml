@@ -1,0 +1,55 @@
+# No top-level `version:` key — deprecated by the Compose Specification;
+# modern `docker compose` ignores it.
+#
+# Note on env_file vs. this file's own ${VAR} substitution: because the local
+# file is literally named `.env` in the project root, Docker Compose also
+# auto-loads it for substituting ${VAR} placeholders written directly in this
+# file (e.g. in the healthcheck and ports below) — separate from, but in
+# addition to, the explicit `env_file:` entries that inject those same
+# variables INTO each container's own environment.
+
+services:
+  # Relational database for the inventory tracking backend. Owns its own
+  # named volume so data survives `docker compose down` (but not `down -v`).
+  postgres:
+    image: postgres:16-alpine
+    env_file:
+      - ./.env
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # The Spring Boot application itself. Waits for postgres to report healthy
+  # (not just "started") before starting, since Flyway/Hibernate validation
+  # runs at boot and needs a database that's actually accepting connections.
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVER_PORT: ${SERVER_PORT:-8080}
+    env_file:
+      - ./.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${SERVER_PORT:-8080}:${SERVER_PORT:-8080}"
+    volumes:
+      # Bind mount (not a named volume) so uploaded files land in ./uploads
+      # on the host and are directly inspectable/backupable outside Docker.
+      # Container-side path is fixed at /app/uploads to match what the
+      # Dockerfile creates and chowns; if STORAGE_LOCAL_PATH is ever changed
+      # in .env to something else, update the Dockerfile's mkdir/chown target
+      # and this mount's right-hand side together.
+      - ./uploads:/app/uploads
+
+volumes:
+  postgres_data:
