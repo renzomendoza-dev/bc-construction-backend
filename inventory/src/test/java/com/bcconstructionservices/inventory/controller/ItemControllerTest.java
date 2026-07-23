@@ -6,6 +6,7 @@ import com.bcconstructionservices.inventory.dto.ItemResponse;
 import com.bcconstructionservices.inventory.dto.PageResponse;
 import com.bcconstructionservices.inventory.exception.DuplicateResourceException;
 import com.bcconstructionservices.inventory.exception.ResourceNotFoundException;
+import com.bcconstructionservices.inventory.service.FileStorageService;
 import com.bcconstructionservices.inventory.service.ItemService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Nested;
@@ -78,6 +79,9 @@ class ItemControllerTest {
 
     @MockitoBean
     private ItemService itemService;
+
+    @MockitoBean
+    private FileStorageService fileStorageService;
 
     // ---------------------------------------------------------------
     // Test data helpers

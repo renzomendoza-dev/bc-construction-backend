@@ -299,4 +299,42 @@ public class InventoryService {
                 .reorderThreshold(stock.getReorderThreshold())
                 .build();
     }
+
+    /**
+     * Sets or updates the reorder threshold on an EXISTING InventoryStock row
+     * for the exact item + warehouse + location combination.
+     *
+     * <p>This is a threshold setting, not a quantity change: it does NOT create
+     * a StockMovement row, and it will NOT create a new InventoryStock row - a
+     * threshold can only be set on stock that already exists.
+     *
+     * @param request the target item/warehouse/location and the new threshold
+     * @return the updated stock row mapped to a StockLevelResponse
+     * @throws ResourceNotFoundException if no InventoryStock row exists for that
+     *                                   item + warehouse + location combination
+     */
+    @Transactional
+    public StockLevelResponse updateReorderThreshold(ReorderThresholdRequest request) {
+        InventoryStock stock = inventoryStockRepository
+                .findByItemAndWarehouseAndLocation(
+                        request.getItemId(), request.getWarehouseId(), request.getLocationId())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "No inventory stock found for item " + request.getItemId()
+                                + " at warehouse " + request.getWarehouseId()
+                                + (request.getLocationId() == null
+                                ? " (warehouse-level, no location)"
+                                : " location " + request.getLocationId())
+                                + "; a reorder threshold can only be set on existing stock."));
+
+        stock.setReorderThreshold(request.getReorderThreshold());
+
+        // The requirement says "and saves". Since the entity is managed within
+        // this @Transactional method, the change would also flush on commit via
+        // dirty checking - this explicit save is belt-and-suspenders and keeps
+        // the method's intent obvious.
+        InventoryStock saved = inventoryStockRepository.save(stock);
+
+        return inventoryStockMapper.toStockLevelResponse(saved);
+    }
+
 }
