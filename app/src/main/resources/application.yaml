@@ -1,6 +1,9 @@
 server:
   port: ${SERVER_PORT:8080}
 
+keycloak:
+  issuer-uri: ${KEYCLOAK_ISSUER_URI}
+
 spring:
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:backend}
@@ -24,6 +27,11 @@ spring:
     multipart:
       max-file-size: ${MAX_FILE_SIZE:10MB}
       max-request-size: ${MAX_REQUEST_SIZE:10MB}
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${keycloak.issuer-uri}
 
 springdoc:
   api-docs:

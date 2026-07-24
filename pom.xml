@@ -18,6 +18,7 @@
         <module>inventory</module>
         <module>app</module>
         <module>sales</module>
+        <module>user</module>
         <!-- add future modules here, e.g. <module>ecommerce</module>, <module>user</module>, <module>common</module> -->
     </modules>
 	<properties>
