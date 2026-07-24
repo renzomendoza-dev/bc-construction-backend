@@ -24,8 +24,8 @@ public interface ItemRepository extends JpaRepository<Item, Long> {
             WHERE (:category IS NULL OR i.category = :category)
               AND (:active IS NULL OR i.active = :active)
               AND (:search IS NULL
-                   OR LOWER(i.name) LIKE LOWER(CONCAT('%', :search, '%'))
-                   OR LOWER(i.sku) LIKE LOWER(CONCAT('%', :search, '%')))
+                   OR LOWER(i.name) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%'))
+                   OR LOWER(i.sku) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%')))
             """)
     Page<Item> search(@Param("category") String category,
                        @Param("active") Boolean active,
