@@ -36,6 +36,7 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 public class SecurityConfig {
 
     private static final String[] PUBLIC_ENDPOINTS = {
+            "/",
             "/swagger-ui/**",
             "/swagger-ui.html",
             "/v3/api-docs/**",
