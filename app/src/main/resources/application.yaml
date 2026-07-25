@@ -48,15 +48,6 @@ app:
     base-url: ${STORAGE_BASE_URL:http://localhost:8080/uploads}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
-  security:
-    # NO DEFAULT VALUE, deliberately. If API_KEY is unset the application
-    # context fails to start with an "Could not resolve placeholder
-    # 'API_KEY'" error, rather than booting with an empty or guessable key.
-    #
-    # That failure is the feature: an auth secret that quietly falls back to
-    # a default is how an API ends up effectively unprotected in production
-    # while looking configured. Fail closed, loudly, at startup.
-    api-key: ${API_KEY}
 
 logging:
   level:

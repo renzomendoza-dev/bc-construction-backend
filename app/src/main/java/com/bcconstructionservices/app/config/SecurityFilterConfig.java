@@ -64,24 +64,4 @@ public class SecurityFilterConfig {
         return registration;
     }
 
-    @Bean
-    public FilterRegistrationBean<ApiKeyAuthFilter> apiKeyAuthFilterRegistration(
-            // No default value on purpose: if API_KEY is unset, the context
-            // fails to start rather than booting with an empty or guessable
-            // key. Failing closed is the right behaviour for an auth secret -
-            // a silent weak default is how unprotected APIs reach production.
-            @Value("${app.security.api-key}") String apiKey) {
-
-        FilterRegistrationBean<ApiKeyAuthFilter> registration =
-                new FilterRegistrationBean<>(new ApiKeyAuthFilter(apiKey));
-
-        // Scoped to the API surface. Note "/api/*" does NOT match "/api-docs"
-        // (no slash after "api"), so the OpenAPI descriptor stays reachable -
-        // as do "/" and "/swagger-ui**", which are outside this pattern and
-        // are additionally skipped inside the filter itself.
-        registration.addUrlPatterns("/api/*");
-        registration.setOrder(API_KEY_FILTER_ORDER);
-        registration.setName("apiKeyAuthFilter");
-        return registration;
-    }
 }
