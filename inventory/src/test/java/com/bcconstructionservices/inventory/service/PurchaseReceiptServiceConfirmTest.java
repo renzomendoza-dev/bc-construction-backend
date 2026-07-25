@@ -117,6 +117,8 @@ class PurchaseReceiptServiceConfirmTest {
 
     @InjectMocks
     private PurchaseReceiptService purchaseReceiptService;
+    @Mock
+    private CurrentUserService currentUserService;
 
     private Supplier activeSupplier;
     private Warehouse activeWarehouse;
@@ -150,6 +152,11 @@ class PurchaseReceiptServiceConfirmTest {
         gravelItem.setId(GRAVEL_ITEM_ID);
         gravelItem.setName("Gravel 3/4 Minus");
         gravelItem.setActive(true);
+    }
+
+    @BeforeEach
+    void setUpCurrentUser() {
+        lenient().when(currentUserService.getCurrentUserId()).thenReturn(1L);
     }
 
     // ---------------------------------------------------------------
@@ -450,6 +457,20 @@ class PurchaseReceiptServiceConfirmTest {
             // rebar's never runs (it fails first) and gravel's is never reached.
             verify(itemSupplierRepository, times(1)).save(any(ItemSupplier.class));
         }
+    }
+
+    @Test
+    void shouldSetConfirmedByToCurrentUserId() {
+        PurchaseReceiptLine line = buildLine(1L, cementItem, 50, "245.00");
+        PurchaseReceipt receipt = buildReceipt(List.of(line));
+        givenReceiptExists(receipt);
+        givenAdjustStockSucceedsForAnyLine();
+        givenNoExistingItemSupplierRows();
+        givenItemSupplierSaveEchoesArgument();
+
+        purchaseReceiptService.confirmPurchaseReceipt(RECEIPT_ID);
+
+        assertThat(receipt.getConfirmedBy()).isEqualTo(1L);
     }
 
     // ---------------------------------------------------------------

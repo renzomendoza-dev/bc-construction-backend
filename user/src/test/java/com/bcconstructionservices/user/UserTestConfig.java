@@ -5,6 +5,7 @@ import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.FilterType;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
@@ -15,7 +16,12 @@ import static org.springframework.security.config.Customizer.withDefaults;
 
 @SpringBootConfiguration
 @EnableAutoConfiguration
-@ComponentScan
+@ComponentScan(
+        excludeFilters = @ComponentScan.Filter(
+                type = FilterType.REGEX,
+                pattern = "com.bcconstructionservices.user.service\\..*"
+        )
+)
 public class UserTestConfig {
 
     @Configuration

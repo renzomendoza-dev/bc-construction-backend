@@ -48,6 +48,12 @@ public class StockMovementResponse {
     @Schema(description = "Optional explanation for the movement", example = "Restocking from supplier delivery")
     private String reason;
 
+    @Schema(description = "ID of the user who created this stock movement", example = "3")
+    private Long createdBy;
+
+    @Schema(description = "Full name of the user who created this stock movement", example = "Juan Dela Cruz")
+    private String createdByName;
+
     @Schema(description = "Timestamp when the movement was recorded", example = "2026-07-18T09:15:30Z")
     private Instant createdAt;
 }

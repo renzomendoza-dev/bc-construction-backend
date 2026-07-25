@@ -2,20 +2,25 @@ package com.bcconstructionservices.inventory.mapper;
 
 import com.bcconstructionservices.inventory.dto.StockMovementResponse;
 import com.bcconstructionservices.inventory.entity.*;
+import com.bcconstructionservices.user.service.UserLookupHelper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.mockito.Mockito.mock;
 
 class StockMovementMapperTest {
 
     private StockMovementMapper mapper;
+
+    private UserLookupHelper userLookupHelper;
 
     private Item item;
     private Warehouse warehouse;
@@ -25,6 +30,9 @@ class StockMovementMapperTest {
     @BeforeEach
     void setUp() {
         mapper = new StockMovementMapperImpl();
+
+        userLookupHelper = mock(UserLookupHelper.class);
+        ReflectionTestUtils.setField(mapper, "userLookupHelper", userLookupHelper);
 
         item = new Item();
         item.setId(42L);

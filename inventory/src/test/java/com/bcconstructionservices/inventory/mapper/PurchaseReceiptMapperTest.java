@@ -7,6 +7,7 @@ import com.bcconstructionservices.inventory.entity.Item;
 import com.bcconstructionservices.inventory.entity.PurchaseReceipt;
 import com.bcconstructionservices.inventory.entity.PurchaseReceiptLine;
 import com.bcconstructionservices.inventory.entity.Supplier;
+import com.bcconstructionservices.user.service.UserLookupHelper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -20,10 +21,13 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.mockito.Mockito.mock;
 
 class PurchaseReceiptMapperTest {
 
     private PurchaseReceiptMapper mapper;
+
+    private UserLookupHelper userLookupHelper;
 
     private Supplier supplier;
     private Item cement;
@@ -33,6 +37,9 @@ class PurchaseReceiptMapperTest {
     void setUp() {
         mapper = new PurchaseReceiptMapperImpl();
         ReflectionTestUtils.setField(mapper, "purchaseReceiptLineMapper", new PurchaseReceiptLineMapperImpl());
+
+        userLookupHelper = mock(UserLookupHelper.class);
+        ReflectionTestUtils.setField(mapper, "userLookupHelper", userLookupHelper);
 
         supplier = new Supplier();
         supplier.setId(7L);

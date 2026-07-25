@@ -58,6 +58,18 @@ public class PurchaseReceiptResponse {
     @Schema(description = "Whether this receipt has been confirmed and applied to inventory", example = "false")
     private boolean confirmed;
 
+    @Schema(description = "ID of the user who confirmed this purchase receipt, applying stock and updating supplier cost", example = "5")
+    private Long confirmedBy;
+
+    @Schema(description = "Full name of the user who confirmed this purchase receipt", example = "Maria Santos")
+    private String confirmedByName;
+
+    @Schema(description = "ID of the user who created this purchase receipt", example = "3")
+    private Long createdBy;
+
+    @Schema(description = "Full name of the user who created this purchase receipt", example = "Juan Dela Cruz")
+    private String createdByName;
+
     @Schema(description = "Timestamp when the receipt was confirmed and applied to inventory, if it has been", example = "2026-07-16T08:05:00Z")
     private Instant confirmedAt;
 

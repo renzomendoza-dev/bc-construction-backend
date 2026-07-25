@@ -10,6 +10,7 @@ import com.bcconstructionservices.inventory.mapper.PurchaseReceiptLineMapper;
 import com.bcconstructionservices.inventory.mapper.PurchaseReceiptLineMapperImpl;
 import com.bcconstructionservices.inventory.mapper.PurchaseReceiptMapperImpl;
 import com.bcconstructionservices.inventory.repository.*;
+import com.bcconstructionservices.user.service.UserLookupHelper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -98,6 +99,8 @@ class PurchaseReceiptServiceCreateTest {
 
     @InjectMocks
     private PurchaseReceiptService purchaseReceiptService;
+    @Mock
+    private UserLookupHelper userLookupHelper;
 
     private Supplier activeSupplier;
     private Item cementItem;
@@ -106,9 +109,10 @@ class PurchaseReceiptServiceCreateTest {
 
     @BeforeEach
     void setUp() {
-        // Wire the spy's internal delegate manually — no Spring context here
-        // to do it via @Autowired, so the generated field has to be set directly.
+        // Wire the spy's internal delegates manually — no Spring context here
+        // to do it via @Autowired, so the generated fields have to be set directly.
         ReflectionTestUtils.setField(purchaseReceiptMapper, "purchaseReceiptLineMapper", new PurchaseReceiptLineMapperImpl());
+        ReflectionTestUtils.setField(purchaseReceiptMapper, "userLookupHelper", userLookupHelper);
 
         activeSupplier = new Supplier();
         activeSupplier.setId(SUPPLIER_ID);

@@ -42,6 +42,7 @@ public class PurchaseReceiptService {
     private final InventoryService inventoryService;
     private final PurchaseReceiptMapper purchaseReceiptMapper;
     private final FileStorageService fileStorageService;
+    private final CurrentUserService currentUserService;
     // Not called directly below: PurchaseReceiptMapper already composes with this
     // (uses = PurchaseReceiptLineMapper.class) to map the `lines` collection inside
     // purchaseReceiptMapper.toResponse(...), and getPurchaseHistoryForItem builds
@@ -151,6 +152,8 @@ public class PurchaseReceiptService {
             itemSupplierRepository.save(itemSupplier);
         }
 
+        Long confirmedById = currentUserService.getCurrentUserId();
+        receipt.setConfirmedBy(confirmedById);
         receipt.setConfirmed(true);
         receipt.setConfirmedAt(Instant.now());
         PurchaseReceipt saved = purchaseReceiptRepository.save(receipt);

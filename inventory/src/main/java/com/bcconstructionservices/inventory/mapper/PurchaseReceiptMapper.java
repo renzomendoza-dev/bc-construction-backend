@@ -3,6 +3,7 @@ package com.bcconstructionservices.inventory.mapper;
 import com.bcconstructionservices.inventory.dto.PurchaseReceiptCreateRequest;
 import com.bcconstructionservices.inventory.dto.PurchaseReceiptResponse;
 import com.bcconstructionservices.inventory.entity.PurchaseReceipt;
+import com.bcconstructionservices.user.service.UserLookupHelper;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 
@@ -21,13 +22,15 @@ import org.mapstruct.Mapping;
  * fields that really are a 1:1 copy (receiptNumber, purchaseDate, imageUrl,
  * notes).
  */
-@Mapper(componentModel = "spring", uses = PurchaseReceiptLineMapper.class)
+@Mapper(componentModel = "spring", uses = {PurchaseReceiptLineMapper.class, UserLookupHelper.class})
 public interface PurchaseReceiptMapper {
 
     @Mapping(target = "supplierId", source = "supplier.id")
     @Mapping(target = "supplierName", source = "supplier.name")
     @Mapping(target = "warehouseId", source = "warehouse.id")
     @Mapping(target = "warehouseName", source = "warehouse.name")
+    @Mapping(target = "confirmedByName", source = "confirmedBy", qualifiedByName = "resolveUserName")
+    @Mapping(target = "createdByName", source = "createdBy", qualifiedByName = "resolveUserName")
     PurchaseReceiptResponse toResponse(PurchaseReceipt receipt);
 
     @Mapping(target = "id", ignore = true)

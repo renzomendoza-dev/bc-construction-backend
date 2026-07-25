@@ -4,6 +4,7 @@ import com.bcconstructionservices.user.dto.UserResponse;
 import com.bcconstructionservices.user.entity.AppUser;
 import com.bcconstructionservices.user.mapper.UserMapper;
 import com.bcconstructionservices.user.service.UserSyncService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
