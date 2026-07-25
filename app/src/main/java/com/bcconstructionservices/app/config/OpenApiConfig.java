@@ -11,18 +11,19 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class OpenApiConfig {
 
-    private static final String API_KEY_SCHEME_NAME = "ApiKeyAuth";
+    private static final String BEARER_SCHEME_NAME = "bearerAuth";
 
     @Bean
     public OpenAPI apiInfo() {
         return new OpenAPI()
                 .components(new Components()
-                        .addSecuritySchemes(API_KEY_SCHEME_NAME,
+                        .addSecuritySchemes(BEARER_SCHEME_NAME,
                                 new SecurityScheme()
-                                        .type(SecurityScheme.Type.APIKEY)
-                                        .in(SecurityScheme.In.HEADER)
-                                        .name("X-API-Key")))
-                .addSecurityItem(new SecurityRequirement().addList(API_KEY_SCHEME_NAME))
+                                        .name(BEARER_SCHEME_NAME)
+                                        .type(SecurityScheme.Type.HTTP)
+                                        .scheme("bearer")
+                                        .bearerFormat("JWT")))
+                .addSecurityItem(new SecurityRequirement().addList(BEARER_SCHEME_NAME))
                 .info(new Info()
                         .title("BC Construction Services API")
                         .version("1.0.0")
