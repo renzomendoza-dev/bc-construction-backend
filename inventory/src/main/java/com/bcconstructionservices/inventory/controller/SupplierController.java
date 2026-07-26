@@ -11,6 +11,7 @@ import com.bcconstructionservices.inventory.exception.ValidationErrorResponse;
 import com.bcconstructionservices.inventory.service.SupplierService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -164,7 +165,7 @@ public class SupplierController {
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Item-supplier links found",
-                    content = @Content(schema = @Schema(implementation = ItemSupplierResponse.class))),
+                    content = @Content(array = @ArraySchema(schema = @Schema(implementation = ItemSupplierResponse.class)))),
             @ApiResponse(responseCode = "404", description = "Item not found",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
