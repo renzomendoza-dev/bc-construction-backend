@@ -47,7 +47,7 @@ app:
     local-path: ${STORAGE_LOCAL_PATH:/app/uploads}
     base-url: ${STORAGE_BASE_URL:http://localhost:8080/uploads}
   cors:
-    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200}
 
 logging:
   level:

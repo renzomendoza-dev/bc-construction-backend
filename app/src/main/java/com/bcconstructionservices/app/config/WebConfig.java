@@ -53,6 +53,7 @@ public class WebConfig implements WebMvcConfigurer {
         // it needs no CORS policy; a cross-origin preflight to any other path
         // gets rejected, which is the desired default.
         source.registerCorsConfiguration("/api/**", config);
+        source.registerCorsConfiguration("/actuator/**", config);
         return source;
     }
 
