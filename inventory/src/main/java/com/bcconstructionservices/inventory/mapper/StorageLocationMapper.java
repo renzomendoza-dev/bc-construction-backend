@@ -23,5 +23,6 @@ public interface StorageLocationMapper {
 
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "warehouse", ignore = true)
+    @Mapping(target = "active", ignore = true)
     StorageLocation toEntity(StorageLocationRequest request);
 }

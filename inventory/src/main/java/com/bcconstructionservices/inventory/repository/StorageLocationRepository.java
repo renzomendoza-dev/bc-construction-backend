@@ -10,4 +10,6 @@ public interface StorageLocationRepository extends JpaRepository<StorageLocation
     boolean existsByWarehouseIdAndCode(Long warehouseId, String code);
 
     List<StorageLocation> findByWarehouseId(Long warehouseId);
+
+    List<StorageLocation> findByWarehouseIdAndActive(Long warehouseId, boolean active);
 }

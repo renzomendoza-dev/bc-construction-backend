@@ -42,6 +42,11 @@ public class StorageLocation {
     @JoinColumn(name = "warehouse_id", nullable = false)
     private Warehouse warehouse;
 
+    @NotNull
+    @Column(name = "active", nullable = false)
+    @Builder.Default
+    private boolean active = true;
+
     /**
      * e.g. "RACK-A-03" or "BOX-12"
      */

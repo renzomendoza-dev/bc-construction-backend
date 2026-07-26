@@ -100,4 +100,36 @@ public class WarehouseService {
                 .map(storageLocationMapper::toResponse)
                 .toList();
     }
+
+    /**
+     * Unlike listItems/listWarehouses/listSuppliers (where a null active means
+     * "no filter, show everything"), a null here defaults to showing only
+     * active locations — storage locations are primarily consumed by "pick a
+     * location" pickers, where an inactive one showing up by default would be
+     * a UX bug, not a feature. Pass active=false explicitly to see only
+     * inactive locations. There is no single call that returns both together.
+     */
+    @Transactional(readOnly = true)
+    public List<StorageLocationResponse> listStorageLocations(Long warehouseId, Boolean active) {
+        if (!warehouseRepository.existsById(warehouseId)) {
+            throw new ResourceNotFoundException("Warehouse", warehouseId);
+        }
+
+        boolean effectiveActive = active == null || active;
+
+        return storageLocationRepository.findByWarehouseIdAndActive(warehouseId, effectiveActive).stream()
+                .map(storageLocationMapper::toResponse)
+                .toList();
+    }
+
+    @Transactional
+    public void deactivateStorageLocation(Long locationId) {
+        StorageLocation location = storageLocationRepository.findById(locationId)
+                .orElseThrow(() -> new ResourceNotFoundException("StorageLocation", locationId));
+        // Deliberately does not touch InventoryStock/StockMovement — a
+        // deactivated location can still have historical rows referencing it;
+        // this only affects whether it's offered going forward.
+        location.setActive(false);
+        storageLocationRepository.save(location);
+    }
 }

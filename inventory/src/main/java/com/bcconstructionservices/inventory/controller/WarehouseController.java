@@ -146,7 +146,9 @@ public class WarehouseController {
     @GetMapping("/{warehouseId}/locations")
     @Operation(
             summary = "List storage locations for a warehouse",
-            description = "Returns every storage location defined within the given warehouse."
+            description = "Returns storage locations defined within the given warehouse. Omitting active defaults "
+                    + "to true (active only) rather than returning everything — pass active=false to see inactive "
+                    + "locations instead. There is currently no single call that returns both together."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Storage locations found",
@@ -156,7 +158,29 @@ public class WarehouseController {
     })
     public ResponseEntity<List<StorageLocationResponse>> listStorageLocations(
             @Parameter(description = "Identifier of the warehouse to list storage locations for", example = "1")
-            @PathVariable Long warehouseId) {
-        return ResponseEntity.ok(warehouseService.listStorageLocations(warehouseId));
+            @PathVariable Long warehouseId,
+            @Parameter(description = "Filter by active status; defaults to true (active only) when omitted", example = "true")
+            @RequestParam(required = false) Boolean active) {
+        return ResponseEntity.ok(warehouseService.listStorageLocations(warehouseId, active));
+    }
+
+    @PatchMapping("/locations/{locationId}/deactivate")
+    @Operation(
+            summary = "Deactivate a storage location (soft delete) — does not affect existing stock or movement history referencing it",
+            description = "Soft-disables a storage location by setting active to false. Historical InventoryStock "
+                    + "and StockMovement rows referencing this location are left untouched; deactivation only "
+                    + "affects whether the location should still be offered going forward, e.g. in \"pick a "
+                    + "location\" UI pickers."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "204", description = "Storage location deactivated"),
+            @ApiResponse(responseCode = "404", description = "Storage location not found",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<Void> deactivateStorageLocation(
+            @Parameter(description = "Identifier of the storage location to deactivate", example = "7")
+            @PathVariable Long locationId) {
+        warehouseService.deactivateStorageLocation(locationId);
+        return ResponseEntity.noContent().build();
     }
 }

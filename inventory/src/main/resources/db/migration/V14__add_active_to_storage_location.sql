@@ -1,0 +1,1 @@
+ALTER TABLE storage_location ADD COLUMN active BOOLEAN NOT NULL DEFAULT true;

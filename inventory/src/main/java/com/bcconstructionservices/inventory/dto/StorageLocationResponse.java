@@ -23,6 +23,9 @@ public class StorageLocationResponse {
     @Schema(description = "Identifier of the warehouse this location belongs to", example = "1")
     private Long warehouseId;
 
+    @Schema(description = "Whether this storage location is currently active", example = "true")
+    private Boolean active;
+
     @Schema(description = "Code identifying the location within its warehouse, e.g. a rack or box label", example = "RACK-A-03")
     private String code;
 }
