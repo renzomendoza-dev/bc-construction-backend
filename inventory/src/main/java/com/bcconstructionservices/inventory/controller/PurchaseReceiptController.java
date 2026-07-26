@@ -37,7 +37,7 @@ import java.time.LocalDate;
  * REST endpoints for recording purchase receipts and applying them to inventory.
  */
 @RestController
-@RequestMapping("/api/purchase-receipts")
+@RequestMapping(value = "/api/purchase-receipts", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiredArgsConstructor
 @Tag(name = "Purchase Receipts", description = "Record scanned purchase receipts and apply them to inventory")
 public class PurchaseReceiptController {

@@ -14,6 +14,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -25,7 +26,7 @@ import java.util.List;
  * transfers, and querying movement history.
  */
 @RestController
-@RequestMapping("/api/inventory")
+@RequestMapping(value = "/api/inventory", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiredArgsConstructor
 @Tag(name = "Inventory", description = "Track stock levels, adjustments, transfers, and movement history")
 public class InventoryController {

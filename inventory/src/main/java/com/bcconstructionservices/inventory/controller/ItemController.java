@@ -36,7 +36,7 @@ import java.util.List;
  * REST endpoints for managing the item/product catalog and item images.
  */
 @RestController
-@RequestMapping("/api/items")
+@RequestMapping(value = "/api/items", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiredArgsConstructor
 @Tag(name = "Items", description = "Manage the item/product catalog and item images")
 public class ItemController {
