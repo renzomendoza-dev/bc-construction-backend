@@ -17,16 +17,16 @@ public interface StockMovementRepository extends JpaRepository<StockMovement, Lo
      * join-fetched so callers can read itemName without a lazy-load per row.
      */
     @Query("""
-            SELECT sm FROM StockMovement sm
-            JOIN FETCH sm.item
-            WHERE (:itemId IS NULL OR sm.item.id = :itemId)
-              AND (:warehouseId IS NULL OR sm.warehouse.id = :warehouseId)
-              AND (:from IS NULL OR sm.createdAt >= :from)
-              AND (:to IS NULL OR sm.createdAt < :to)
-            """)
+        SELECT sm FROM StockMovement sm
+        JOIN FETCH sm.item
+        WHERE (CAST(:itemId AS long) IS NULL OR sm.item.id = :itemId)
+          AND (CAST(:warehouseId AS long) IS NULL OR sm.warehouse.id = :warehouseId)
+          AND (CAST(:from AS timestamp) IS NULL OR sm.createdAt >= :from)
+          AND (CAST(:to AS timestamp) IS NULL OR sm.createdAt < :to)
+        """)
     Page<StockMovement> search(@Param("itemId") Long itemId,
-                                @Param("warehouseId") Long warehouseId,
-                                @Param("from") Instant from,
-                                @Param("to") Instant to,
-                                Pageable pageable);
+                               @Param("warehouseId") Long warehouseId,
+                               @Param("from") Instant from,
+                               @Param("to") Instant to,
+                               Pageable pageable);
 }
