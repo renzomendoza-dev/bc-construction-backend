@@ -8,6 +8,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Component;
+import org.springframework.web.context.request.RequestAttributes;
+import org.springframework.web.context.request.RequestContextHolder;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -36,14 +38,26 @@ public class AuditorAwareImpl implements AuditorAware<Long> {
     @Override
     public Optional<Long> getCurrentAuditor() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-
         if (authentication == null || !(authentication.getPrincipal() instanceof Jwt jwt)) {
             return Optional.empty();
         }
 
         UUID keycloakId = UUID.fromString(jwt.getSubject());
 
-        return userRepository.findByKeycloakId(keycloakId)
-                .map(AppUser::getId);
+        RequestAttributes attrs = RequestContextHolder.getRequestAttributes();
+        if (attrs != null) {
+            Object cached = attrs.getAttribute("auditorId:" + keycloakId, RequestAttributes.SCOPE_REQUEST);
+            if (cached != null) {
+                return Optional.of((Long) cached);
+            }
+        }
+
+        Optional<Long> resolved = userRepository.findByKeycloakId(keycloakId).map(AppUser::getId);
+
+        if (attrs != null) {
+            resolved.ifPresent(id ->
+                    attrs.setAttribute("auditorId:" + keycloakId, id, RequestAttributes.SCOPE_REQUEST));
+        }
+        return resolved;
     }
 }
