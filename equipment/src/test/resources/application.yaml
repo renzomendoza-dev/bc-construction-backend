@@ -1,0 +1,32 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:equipment_test;MODE=PostgreSQL
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    # No spring.jpa.database-platform override here — @DataJpaTest / Spring Boot
+    # auto-detects the H2 dialect from the datasource. Hardcoding
+    # PostgreSQLDialect here was the root cause of a prior dialect-mismatch bug.
+    properties:
+      hibernate:
+        format_sql: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    # Points at the same migration path as production so V1__create_equipment_tables.sql
+    # (and all subsequent versions) run against H2 directly. This keeps ddl-auto=validate
+    # honest — Hibernate validates against a schema Flyway actually built, rather than
+    # generating its own schema and silently diverging from PostgreSQL.
+    baseline-on-migrate: false
+    clean-disabled: true
+
+logging:
+  level:
+    org.flywaydb: INFO
+    org.hibernate.SQL: WARN

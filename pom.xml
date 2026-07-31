@@ -19,6 +19,7 @@
         <module>app</module>
         <module>sales</module>
         <module>user</module>
+        <module>equipment</module>
         <!-- add future modules here, e.g. <module>ecommerce</module>, <module>user</module>, <module>common</module> -->
     </modules>
 	<properties>

@@ -35,8 +35,24 @@ public class AuditorAwareImpl implements AuditorAware<Long> {
 
     private final UserRepository userRepository;
 
+    /**
+     * Reentrancy guard. Resolving the auditor queries {@link UserRepository},
+     * which can make Hibernate auto-flush other still-dirty entities before
+     * running that query. If one of those entities is itself audited, its
+     * pre-update callback calls back into {@link #getCurrentAuditor()} from
+     * inside this very call, before the per-request cache below has anything
+     * to return — without this guard, that reentrant call repeats the same
+     * query, triggers another auto-flush, and recurses until
+     * {@link StackOverflowError}.
+     */
+    private static final ThreadLocal<Boolean> RESOLVING = ThreadLocal.withInitial(() -> false);
+
     @Override
     public Optional<Long> getCurrentAuditor() {
+        if (RESOLVING.get()) {
+            return Optional.empty();
+        }
+
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !(authentication.getPrincipal() instanceof Jwt jwt)) {
             return Optional.empty();
@@ -52,12 +68,17 @@ public class AuditorAwareImpl implements AuditorAware<Long> {
             }
         }
 
-        Optional<Long> resolved = userRepository.findByKeycloakId(keycloakId).map(AppUser::getId);
+        RESOLVING.set(true);
+        try {
+            Optional<Long> resolved = userRepository.findByKeycloakId(keycloakId).map(AppUser::getId);
 
-        if (attrs != null) {
-            resolved.ifPresent(id ->
-                    attrs.setAttribute("auditorId:" + keycloakId, id, RequestAttributes.SCOPE_REQUEST));
+            if (attrs != null) {
+                resolved.ifPresent(id ->
+                        attrs.setAttribute("auditorId:" + keycloakId, id, RequestAttributes.SCOPE_REQUEST));
+            }
+            return resolved;
+        } finally {
+            RESOLVING.remove();
         }
-        return resolved;
     }
 }
