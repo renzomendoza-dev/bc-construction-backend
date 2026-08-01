@@ -3,6 +3,7 @@ package com.bcconstructionservices.user.controller;
 import com.bcconstructionservices.user.dto.UserResponse;
 import com.bcconstructionservices.user.entity.AppUser;
 import com.bcconstructionservices.user.mapper.UserMapper;
+import com.bcconstructionservices.user.repository.UserRepository;
 import com.bcconstructionservices.user.service.UserSyncService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -15,6 +16,8 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 /**
  * Exposes the current authenticated user's local app profile.
@@ -34,6 +37,31 @@ public class UserController {
 
     private final UserSyncService userSyncService;
     private final UserMapper userMapper;
+    private final UserRepository userRepository;
+
+    /**
+     * Returns every active local user profile, e.g. for populating an
+     * assignment or equipment checkout picker.
+     * <p>
+     * Deliberately unpaginated and unfiltered beyond {@code active}: the
+     * local user table is expected to stay small (one row per person who has
+     * ever logged in), so a picker can just load the whole list client-side.
+     *
+     * @return active local user profiles, mapped to {@link UserResponse}
+     */
+    @GetMapping
+    @Operation(
+            summary = "List active users",
+            description = "Returns every active local user profile (id, keycloakId, fullName, " +
+                    "active, createdAt, updatedAt). Intended for populating pickers — e.g. " +
+                    "selecting who to check equipment out to — not as a full identity directory; " +
+                    "credentials, email, and roles remain Keycloak-only."
+    )
+    public List<UserResponse> findAll() {
+        return userRepository.findByActiveTrue().stream()
+                .map(userMapper::toResponse)
+                .toList();
+    }
 
     /**
      * Returns the current authenticated user's local app profile, syncing it

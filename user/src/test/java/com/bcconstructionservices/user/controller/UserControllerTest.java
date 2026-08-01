@@ -3,6 +3,7 @@ package com.bcconstructionservices.user.controller;
 import com.bcconstructionservices.user.dto.UserResponse;
 import com.bcconstructionservices.user.entity.AppUser;
 import com.bcconstructionservices.user.mapper.UserMapper;
+import com.bcconstructionservices.user.repository.UserRepository;
 import com.bcconstructionservices.user.service.UserSyncService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -13,6 +14,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -47,6 +49,49 @@ class UserControllerTest {
 
     @MockitoBean
     private UserMapper userMapper;
+
+    @MockitoBean
+    private UserRepository userRepository;
+
+    @Test
+    void findAll_authenticatedRequest_returns200WithActiveUsersOnly() throws Exception {
+        // Arrange
+        UUID keycloakId = UUID.randomUUID();
+        Instant now = Instant.now();
+
+        AppUser activeUser = AppUser.builder()
+                .id(1L)
+                .keycloakId(keycloakId)
+                .fullName("Jane Doe")
+                .active(true)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+
+        UserResponse userResponse = new UserResponse(1L, keycloakId, "Jane Doe", true, now, now);
+
+        when(userRepository.findByActiveTrue()).thenReturn(List.of(activeUser));
+        when(userMapper.toResponse(activeUser)).thenReturn(userResponse);
+
+        // Act & Assert
+        mockMvc.perform(get("/api/users")
+                        .with(jwt().jwt(builder -> builder.claim("sub", keycloakId.toString()))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].id").value(1L))
+                .andExpect(jsonPath("$[0].fullName").value("Jane Doe"))
+                .andExpect(jsonPath("$[0].active").value(true));
+    }
+
+    @Test
+    void findAll_unauthenticatedRequest_returns401() throws Exception {
+        // Arrange
+        // No jwt() post-processor applied -> request has no authentication
+
+        // Act & Assert
+        mockMvc.perform(get("/api/users"))
+                .andExpect(status().isUnauthorized());
+    }
 
     @Test
     void getCurrentUser_authenticatedRequest_returns200WithUserResponse() throws Exception {
