@@ -1,6 +1,8 @@
 package com.bcconstructionservices.user.repository;
 
 import com.bcconstructionservices.user.entity.AppUser;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -36,4 +38,10 @@ public interface UserRepository extends JpaRepository<AppUser, Long> {
      * dropdown.
      */
     List<AppUser> findByActiveTrue();
+
+    /**
+     * Paginated listing filtered by active status, for the admin user list
+     * (unfiltered listing uses the inherited {@code findAll(Pageable)}).
+     */
+    Page<AppUser> findByActive(boolean active, Pageable pageable);
 }

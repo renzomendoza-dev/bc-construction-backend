@@ -7,6 +7,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 
 /**
@@ -31,9 +32,14 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
  * the decoder from the issuer's OIDC discovery document, so no manual
  * {@code JwtDecoder} bean is defined here unless issuer-specific overrides
  * become necessary later.
+ * <p>
+ * {@code @EnableMethodSecurity} is required for {@code @PreAuthorize} (e.g.
+ * on the admin-only endpoints in the {@code user} module) to be enforced —
+ * without it, the annotation is silently ignored.
  */
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 public class SecurityConfig {
 
     private static final String[] PUBLIC_ENDPOINTS = {

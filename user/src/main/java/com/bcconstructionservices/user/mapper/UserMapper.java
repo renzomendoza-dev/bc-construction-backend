@@ -1,8 +1,14 @@
 package com.bcconstructionservices.user.mapper;
 
+import com.bcconstructionservices.user.dto.AdminUserResponse;
+import com.bcconstructionservices.user.dto.RoleResponse;
 import com.bcconstructionservices.user.dto.UserResponse;
 import com.bcconstructionservices.user.entity.AppUser;
+import com.bcconstructionservices.user.service.keycloak.dto.KeycloakRoleRepresentation;
 import org.mapstruct.Mapper;
+import org.mapstruct.Mapping;
+
+import java.util.List;
 
 /**
  * MapStruct mapper for converting {@link AppUser} entities to {@link UserResponse} DTOs.
@@ -16,4 +22,9 @@ import org.mapstruct.Mapper;
 public interface UserMapper {
 
     UserResponse toResponse(AppUser appUser);
+
+    @Mapping(target = "realmRoles", source = "realmRoles")
+    AdminUserResponse toAdminResponse(AppUser appUser, List<String> realmRoles);
+
+    RoleResponse toRoleResponse(KeycloakRoleRepresentation role);
 }

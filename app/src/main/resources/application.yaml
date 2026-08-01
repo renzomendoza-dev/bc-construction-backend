@@ -3,6 +3,9 @@ server:
 
 keycloak:
   issuer-uri: ${KEYCLOAK_ISSUER_URI}
+  admin:
+    client-id: ${KEYCLOAK_ADMIN_CLIENT_ID}
+    client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET}
 
 spring:
   datasource:
