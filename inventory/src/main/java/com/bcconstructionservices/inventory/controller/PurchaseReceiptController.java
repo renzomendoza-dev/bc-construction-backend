@@ -22,6 +22,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -64,6 +65,7 @@ public class PurchaseReceiptController {
                     + "item id that doesn't exist",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
+    @PreAuthorize("hasRole('PURCHASE_RECEIPT_CREATE')")
     public ResponseEntity<PurchaseReceiptResponse> createPurchaseReceipt(
             @Valid @RequestBody PurchaseReceiptCreateRequest request) {
         PurchaseReceiptResponse response = purchaseReceiptService.createPurchaseReceipt(request);
@@ -92,6 +94,7 @@ public class PurchaseReceiptController {
                     + "lines to confirm",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
+    @PreAuthorize("hasRole('PURCHASE_RECEIPT_CONFIRM')")
     public ResponseEntity<PurchaseReceiptResponse> confirmPurchaseReceipt(
             @Parameter(description = "Identifier of the purchase receipt to confirm", example = "20")
             @PathVariable Long receiptId) {
@@ -165,6 +168,7 @@ public class PurchaseReceiptController {
     @PostMapping(
             value = "/{receiptId}/image/upload",
             consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasRole('PURCHASE_RECEIPT_CREATE')")
     public ResponseEntity<PurchaseReceiptResponse> uploadReceiptImage(
             @PathVariable Long receiptId,
             @RequestParam("image") MultipartFile image) {

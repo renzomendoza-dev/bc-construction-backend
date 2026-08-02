@@ -16,6 +16,7 @@ import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -121,6 +122,7 @@ public class InventoryController {
                     + "the balance below zero",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
+    @PreAuthorize("hasRole('STOCK_ADJUST')")
     public ResponseEntity<StockMovementResponse> adjustStock(@Valid @RequestBody StockAdjustmentRequest request) {
         return ResponseEntity.ok(inventoryService.adjustStock(request));
     }
@@ -150,6 +152,7 @@ public class InventoryController {
                     + "cover the transfer",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
+    @PreAuthorize("hasRole('STOCK_TRANSFER')")
     public ResponseEntity<List<StockMovementResponse>> transferStock(@Valid @RequestBody StockTransferRequest request) {
         return ResponseEntity.ok(inventoryService.transferStock(request));
     }
@@ -185,6 +188,7 @@ public class InventoryController {
             @ApiResponse(responseCode = "404", description = "No matching inventory stock row exists")
     })
     @PatchMapping("/reorder-threshold")
+    @PreAuthorize("hasRole('STOCK_SET_REORDER_THRESHOLD')")
     public ResponseEntity<StockLevelResponse> updateReorderThreshold(
             @Valid @RequestBody ReorderThresholdRequest request) {
         StockLevelResponse response = inventoryService.updateReorderThreshold(request);

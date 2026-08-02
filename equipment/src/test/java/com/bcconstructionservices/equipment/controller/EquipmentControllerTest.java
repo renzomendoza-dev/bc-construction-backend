@@ -17,10 +17,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -85,12 +89,25 @@ class EquipmentControllerTest {
     @MockitoBean
     private EquipmentMapper equipmentMapper;
 
-    // TODO: swap for the project's real authenticated-request helper if one exists.
-    private static org.springframework.test.web.servlet.request.RequestPostProcessor authenticatedJwt() {
+    /**
+     * Authenticated JWT, optionally granted the given permission(s) (e.g.
+     * "EQUIPMENT_CREATE"). Authorities are set directly via
+     * {@code .authorities(...)} rather than a {@code realm_access} claim —
+     * {@code SecurityMockMvcRequestPostProcessors.jwt()} uses a plain
+     * scope-based {@code JwtGrantedAuthoritiesConverter} by default, not the
+     * app module's {@code KeycloakJwtAuthenticationConverter} (which this
+     * module can't reference without a circular dependency), so a
+     * {@code realm_access} claim alone would never actually grant a
+     * {@code ROLE_*} authority here.
+     */
+    private static RequestPostProcessor authenticatedJwt(String... permissions) {
+        List<GrantedAuthority> authorities = Arrays.stream(permissions)
+                .map(p -> (GrantedAuthority) new SimpleGrantedAuthority("ROLE_" + p))
+                .toList();
         return jwt().jwt(builder -> builder
-                .header("alg", "none")
-                .claim("sub", "keycloak-user-id")
-                .claim("realm_access", java.util.Map.of("roles", List.of("USER"))));
+                        .header("alg", "none")
+                        .claim("sub", "keycloak-user-id"))
+                .authorities(authorities);
     }
 
     private Equipment sampleAvailableEquipment() {
@@ -129,7 +146,7 @@ class EquipmentControllerTest {
         when(equipmentMapper.toResponse(createdEntity)).thenReturn(response);
 
         mockMvc.perform(post("/api/equipment")
-                        .with(authenticatedJwt())
+                        .with(authenticatedJwt("EQUIPMENT_CREATE"))
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
@@ -148,6 +165,20 @@ class EquipmentControllerTest {
                         .contentType("application/json")
                         .content(invalidBody))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void create_withoutEquipmentCreatePermission_returns403() throws Exception {
+        EquipmentCreateRequest request = EquipmentCreateRequest.builder()
+                .assetTag("EQ-2026-0001")
+                .name("DeWalt 20V Cordless Drill")
+                .build();
+
+        mockMvc.perform(post("/api/equipment")
+                        .with(authenticatedJwt())
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isForbidden());
     }
 
     // ---------------------------------------------------------------
@@ -172,11 +203,24 @@ class EquipmentControllerTest {
         when(equipmentMapper.toResponse(updatedEntity)).thenReturn(response);
 
         mockMvc.perform(patch("/api/equipment/{id}", 1L)
-                        .with(authenticatedJwt())
+                        .with(authenticatedJwt("EQUIPMENT_EDIT"))
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("DeWalt 20V Cordless Drill (renamed)"));
+    }
+
+    @Test
+    void update_withoutEquipmentEditPermission_returns403() throws Exception {
+        EquipmentUpdateRequest request = EquipmentUpdateRequest.builder()
+                .name("DeWalt 20V Cordless Drill (renamed)")
+                .build();
+
+        mockMvc.perform(patch("/api/equipment/{id}", 1L)
+                        .with(authenticatedJwt())
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isForbidden());
     }
 
     // ---------------------------------------------------------------
@@ -254,7 +298,7 @@ class EquipmentControllerTest {
         when(equipmentMapper.toResponse(checkedOutEntity)).thenReturn(response);
 
         mockMvc.perform(post("/api/equipment/{id}/checkout", 1L)
-                        .with(authenticatedJwt())
+                        .with(authenticatedJwt("EQUIPMENT_CHECKOUT"))
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -273,7 +317,7 @@ class EquipmentControllerTest {
                         "Equipment EQ-2026-0001 is not available for checkout (current status: CHECKED_OUT)"));
 
         mockMvc.perform(post("/api/equipment/{id}/checkout", 1L)
-                        .with(authenticatedJwt())
+                        .with(authenticatedJwt("EQUIPMENT_CHECKOUT"))
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isConflict());
@@ -290,10 +334,24 @@ class EquipmentControllerTest {
                 .thenThrow(new InvalidCheckoutUserException(999L));
 
         mockMvc.perform(post("/api/equipment/{id}/checkout", 1L)
-                        .with(authenticatedJwt())
+                        .with(authenticatedJwt("EQUIPMENT_CHECKOUT"))
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void checkOut_withoutEquipmentCheckoutPermission_returns403() throws Exception {
+        EquipmentCheckOutRequest request = EquipmentCheckOutRequest.builder()
+                .userId(17L)
+                .site("Site C")
+                .build();
+
+        mockMvc.perform(post("/api/equipment/{id}/checkout", 1L)
+                        .with(authenticatedJwt())
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isForbidden());
     }
 
     // ---------------------------------------------------------------
@@ -313,7 +371,7 @@ class EquipmentControllerTest {
         when(equipmentMapper.toResponse(checkedInEntity)).thenReturn(response);
 
         mockMvc.perform(post("/api/equipment/{id}/checkin", 1L)
-                        .with(authenticatedJwt())
+                        .with(authenticatedJwt("EQUIPMENT_CHECKIN"))
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -330,10 +388,23 @@ class EquipmentControllerTest {
                 .thenThrow(new NoOpenAssignmentException(1L));
 
         mockMvc.perform(post("/api/equipment/{id}/checkin", 1L)
-                        .with(authenticatedJwt())
+                        .with(authenticatedJwt("EQUIPMENT_CHECKIN"))
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isConflict());
+    }
+
+    @Test
+    void checkIn_withoutEquipmentCheckinPermission_returns403() throws Exception {
+        EquipmentCheckInRequest request = EquipmentCheckInRequest.builder()
+                .conditionIn("Returned in working order")
+                .build();
+
+        mockMvc.perform(post("/api/equipment/{id}/checkin", 1L)
+                        .with(authenticatedJwt())
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isForbidden());
     }
 
     // ---------------------------------------------------------------

@@ -10,12 +10,19 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
+
+import java.util.Arrays;
+import java.util.List;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -54,6 +61,22 @@ class InventoryControllerReorderThresholdTest {
 
     @MockitoBean
     private InventoryService inventoryService;
+
+    /**
+     * Authenticated JWT, optionally granted the given permission(s) (e.g.
+     * "STOCK_SET_REORDER_THRESHOLD"). See EquipmentControllerTest for why
+     * authorities are set directly via .authorities(...) rather than a
+     * realm_access claim.
+     */
+    private static RequestPostProcessor authenticatedJwt(String... permissions) {
+        List<GrantedAuthority> authorities = Arrays.stream(permissions)
+                .map(p -> (GrantedAuthority) new SimpleGrantedAuthority("ROLE_" + p))
+                .toList();
+        return jwt().jwt(builder -> builder
+                        .header("alg", "none")
+                        .claim("sub", "keycloak-user-id"))
+                .authorities(authorities);
+    }
 
     @Nested
     class ReorderThresholdTests {
@@ -99,6 +122,7 @@ class InventoryControllerReorderThresholdTest {
                     .thenReturn(sampleResponse());
 
             mockMvc.perform(patch("/api/inventory/reorder-threshold")
+                            .with(authenticatedJwt("STOCK_SET_REORDER_THRESHOLD"))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(validRequest())))
                     .andExpect(status().isOk())
@@ -106,6 +130,23 @@ class InventoryControllerReorderThresholdTest {
                     .andExpect(jsonPath("$.warehouseId").value(3))
                     .andExpect(jsonPath("$.reorderThreshold").value(30))
                     .andExpect(jsonPath("$.quantity").value(120));
+        }
+
+        @Test
+        void shouldReturn403WhenCallerLacksStockSetReorderThresholdPermission() throws Exception {
+            mockMvc.perform(patch("/api/inventory/reorder-threshold")
+                            .with(authenticatedJwt())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(validRequest())))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        void shouldReturn401WhenUnauthenticated() throws Exception {
+            mockMvc.perform(patch("/api/inventory/reorder-threshold")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(validRequest())))
+                    .andExpect(status().isUnauthorized());
         }
 
         @Test
@@ -120,6 +161,7 @@ class InventoryControllerReorderThresholdTest {
 
             // Zero must be accepted by @PositiveOrZero, not rejected as invalid.
             mockMvc.perform(patch("/api/inventory/reorder-threshold")
+                            .with(authenticatedJwt("STOCK_SET_REORDER_THRESHOLD"))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isOk())
@@ -139,6 +181,7 @@ class InventoryControllerReorderThresholdTest {
 
             // locationId is nullable - a warehouse-level threshold is valid.
             mockMvc.perform(patch("/api/inventory/reorder-threshold")
+                            .with(authenticatedJwt("STOCK_SET_REORDER_THRESHOLD"))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isOk());
@@ -154,6 +197,7 @@ class InventoryControllerReorderThresholdTest {
             request.setItemId(null);
 
             mockMvc.perform(patch("/api/inventory/reorder-threshold")
+                            .with(authenticatedJwt())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isBadRequest())
@@ -166,6 +210,7 @@ class InventoryControllerReorderThresholdTest {
             request.setWarehouseId(null);
 
             mockMvc.perform(patch("/api/inventory/reorder-threshold")
+                            .with(authenticatedJwt())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isBadRequest())
@@ -178,6 +223,7 @@ class InventoryControllerReorderThresholdTest {
             request.setReorderThreshold(null);
 
             mockMvc.perform(patch("/api/inventory/reorder-threshold")
+                            .with(authenticatedJwt())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isBadRequest())
@@ -190,6 +236,7 @@ class InventoryControllerReorderThresholdTest {
             request.setReorderThreshold(-5);
 
             mockMvc.perform(patch("/api/inventory/reorder-threshold")
+                            .with(authenticatedJwt())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isBadRequest())
@@ -207,6 +254,7 @@ class InventoryControllerReorderThresholdTest {
                             "No inventory stock found for item 42 at warehouse 3 location 21"));
 
             mockMvc.perform(patch("/api/inventory/reorder-threshold")
+                            .with(authenticatedJwt("STOCK_SET_REORDER_THRESHOLD"))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(validRequest())))
                     .andExpect(status().isNotFound());

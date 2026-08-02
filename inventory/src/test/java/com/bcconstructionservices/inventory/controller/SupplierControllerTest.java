@@ -12,16 +12,21 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.List;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -64,6 +69,21 @@ class SupplierControllerTest {
 
     @MockitoBean
     private SupplierService supplierService;
+
+    /**
+     * Authenticated JWT, optionally granted the given permission(s) (e.g.
+     * "SUPPLIER_CREATE"). See EquipmentControllerTest for why authorities
+     * are set directly via .authorities(...) rather than a realm_access claim.
+     */
+    private static RequestPostProcessor authenticatedJwt(String... permissions) {
+        List<GrantedAuthority> authorities = Arrays.stream(permissions)
+                .map(p -> (GrantedAuthority) new SimpleGrantedAuthority("ROLE_" + p))
+                .toList();
+        return jwt().jwt(builder -> builder
+                        .header("alg", "none")
+                        .claim("sub", "keycloak-user-id"))
+                .authorities(authorities);
+    }
 
     // ---------------------------------------------------------------
     // Test data helpers
@@ -121,6 +141,7 @@ class SupplierControllerTest {
                     .thenReturn(sampleSupplierResponse());
 
             mockMvc.perform(post("/api/suppliers")
+                            .with(authenticatedJwt("SUPPLIER_CREATE"))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(validCreateRequest())))
                     .andExpect(status().isCreated())
@@ -134,10 +155,28 @@ class SupplierControllerTest {
             request.setName("");
 
             mockMvc.perform(post("/api/suppliers")
+                            .with(authenticatedJwt())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isBadRequest())
                     .andExpect(content().string(containsString("name")));
+        }
+
+        @Test
+        void shouldReturn403WhenCallerLacksSupplierCreatePermission() throws Exception {
+            mockMvc.perform(post("/api/suppliers")
+                            .with(authenticatedJwt())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(validCreateRequest())))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        void shouldReturn401WhenUnauthenticated() throws Exception {
+            mockMvc.perform(post("/api/suppliers")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(validCreateRequest())))
+                    .andExpect(status().isUnauthorized());
         }
     }
 
@@ -152,7 +191,7 @@ class SupplierControllerTest {
         void shouldReturn200WithSupplierWhenFound() throws Exception {
             when(supplierService.getSupplierById(7L)).thenReturn(sampleSupplierResponse());
 
-            mockMvc.perform(get("/api/suppliers/{supplierId}", 7L))
+            mockMvc.perform(get("/api/suppliers/{supplierId}", 7L).with(authenticatedJwt()))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.id").value(7))
                     .andExpect(jsonPath("$.name").value("Luzon Steel Trading"));
@@ -163,7 +202,7 @@ class SupplierControllerTest {
             when(supplierService.getSupplierById(999L))
                     .thenThrow(new ResourceNotFoundException("Supplier not found: 999"));
 
-            mockMvc.perform(get("/api/suppliers/{supplierId}", 999L))
+            mockMvc.perform(get("/api/suppliers/{supplierId}", 999L).with(authenticatedJwt()))
                     .andExpect(status().isNotFound());
         }
     }
@@ -181,6 +220,7 @@ class SupplierControllerTest {
             request.setItemId(null);
 
             mockMvc.perform(post("/api/suppliers/link-item")
+                            .with(authenticatedJwt())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isBadRequest())
@@ -193,6 +233,7 @@ class SupplierControllerTest {
             request.setUnitCost(new BigDecimal("-5.00"));
 
             mockMvc.perform(post("/api/suppliers/link-item")
+                            .with(authenticatedJwt())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isBadRequest())
@@ -205,12 +246,22 @@ class SupplierControllerTest {
                     .thenReturn(sampleLinkResponse());
 
             mockMvc.perform(post("/api/suppliers/link-item")
+                            .with(authenticatedJwt("SUPPLIER_LINK_ITEM"))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(validLinkRequest())))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.itemId").value(42))
                     .andExpect(jsonPath("$.supplierId").value(7))
                     .andExpect(jsonPath("$.unitCost").value(238.25));
+        }
+
+        @Test
+        void shouldReturn403WhenCallerLacksSupplierLinkItemPermission() throws Exception {
+            mockMvc.perform(post("/api/suppliers/link-item")
+                            .with(authenticatedJwt())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(validLinkRequest())))
+                    .andExpect(status().isForbidden());
         }
     }
 
@@ -225,7 +276,7 @@ class SupplierControllerTest {
         void shouldReturn200WithListOfSuppliersForItem() throws Exception {
             when(supplierService.getSuppliersForItem(42L)).thenReturn(List.of(sampleLinkResponse()));
 
-            mockMvc.perform(get("/api/suppliers/for-item/{itemId}", 42L))
+            mockMvc.perform(get("/api/suppliers/for-item/{itemId}", 42L).with(authenticatedJwt()))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$").isArray())
                     .andExpect(jsonPath("$.length()").value(1))

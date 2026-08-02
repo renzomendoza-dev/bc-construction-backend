@@ -5,6 +5,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -55,6 +56,18 @@ public class EquipmentExceptionHandler {
     public ResponseEntity<ErrorResponse> handleInvalidCheckoutUser(
             InvalidCheckoutUserException ex, HttpServletRequest request) {
         return buildResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    /**
+     * Thrown by {@code @PreAuthorize} when an authenticated caller lacks the
+     * required permission. Handled explicitly here — otherwise it would be
+     * caught by the generic {@code Exception.class} fallback below and
+     * returned as a 500, instead of the correct 403.
+     */
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleAccessDenied(
+            AccessDeniedException ex, HttpServletRequest request) {
+        return buildResponse(HttpStatus.FORBIDDEN, "Access denied", request);
     }
 
     /**

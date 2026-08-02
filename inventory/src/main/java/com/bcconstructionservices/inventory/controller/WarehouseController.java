@@ -23,6 +23,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -59,6 +60,7 @@ public class WarehouseController {
             @ApiResponse(responseCode = "409", description = "A warehouse with this code already exists",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
+    @PreAuthorize("hasRole('WAREHOUSE_CREATE')")
     public ResponseEntity<WarehouseResponse> createWarehouse(@Valid @RequestBody WarehouseCreateRequest request) {
         WarehouseResponse response = warehouseService.createWarehouse(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
@@ -78,6 +80,7 @@ public class WarehouseController {
             @ApiResponse(responseCode = "404", description = "Warehouse not found",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
+    @PreAuthorize("hasRole('WAREHOUSE_EDIT')")
     public ResponseEntity<WarehouseResponse> updateWarehouse(
             @Parameter(description = "Identifier of the warehouse to update", example = "1")
             @PathVariable Long warehouseId,
@@ -112,6 +115,7 @@ public class WarehouseController {
             @ApiResponse(responseCode = "404", description = "Warehouse not found",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
+    @PreAuthorize("hasRole('WAREHOUSE_DEACTIVATE')")
     public ResponseEntity<Void> deactivateWarehouse(
             @Parameter(description = "Identifier of the warehouse to deactivate", example = "1")
             @PathVariable Long warehouseId) {
@@ -137,6 +141,7 @@ public class WarehouseController {
                     + "in the given warehouse",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
+    @PreAuthorize("hasRole('WAREHOUSE_MANAGE_LOCATIONS')")
     public ResponseEntity<StorageLocationResponse> addStorageLocation(
             @Valid @RequestBody StorageLocationRequest request) {
         StorageLocationResponse response = warehouseService.addStorageLocation(request);
@@ -177,6 +182,7 @@ public class WarehouseController {
             @ApiResponse(responseCode = "404", description = "Storage location not found",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
+    @PreAuthorize("hasRole('WAREHOUSE_DEACTIVATE')")
     public ResponseEntity<Void> deactivateStorageLocation(
             @Parameter(description = "Identifier of the storage location to deactivate", example = "7")
             @PathVariable Long locationId) {

@@ -12,6 +12,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -29,6 +30,7 @@ public class EquipmentController {
     @PostMapping
     @Operation(summary = "Create new equipment")
     @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("hasRole('EQUIPMENT_CREATE')")
     public EquipmentResponse create(@Valid @RequestBody EquipmentCreateRequest request) {
         Equipment equipment = equipmentService.create(request);
         return equipmentMapper.toResponse(equipment);
@@ -36,6 +38,7 @@ public class EquipmentController {
 
     @PatchMapping("/{id}")
     @Operation(summary = "Update equipment details (name, category, serial, purchase info)")
+    @PreAuthorize("hasRole('EQUIPMENT_EDIT')")
     public EquipmentResponse update(
             @PathVariable Long id,
             @Valid @RequestBody EquipmentUpdateRequest request) {
@@ -62,6 +65,7 @@ public class EquipmentController {
 
     @PostMapping("/{id}/checkout")
     @Operation(summary = "Check out equipment to a user at a site")
+    @PreAuthorize("hasRole('EQUIPMENT_CHECKOUT')")
     public EquipmentResponse checkOut(
             @PathVariable Long id,
             @Valid @RequestBody EquipmentCheckOutRequest request) {
@@ -72,6 +76,7 @@ public class EquipmentController {
 
     @PostMapping("/{id}/checkin")
     @Operation(summary = "Check in equipment, closing the open assignment")
+    @PreAuthorize("hasRole('EQUIPMENT_CHECKIN')")
     public EquipmentResponse checkIn(
             @PathVariable Long id,
             @Valid @RequestBody EquipmentCheckInRequest request) {

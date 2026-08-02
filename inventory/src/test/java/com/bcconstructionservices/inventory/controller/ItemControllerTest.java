@@ -16,11 +16,15 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.List;
 
 import static org.hamcrest.Matchers.containsString;
@@ -29,6 +33,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -83,6 +88,21 @@ class ItemControllerTest {
     @MockitoBean
     private FileStorageService fileStorageService;
 
+    /**
+     * Authenticated JWT, optionally granted the given permission(s) (e.g.
+     * "ITEM_CREATE"). See EquipmentControllerTest for why authorities are
+     * set directly via .authorities(...) rather than a realm_access claim.
+     */
+    private static RequestPostProcessor authenticatedJwt(String... permissions) {
+        List<GrantedAuthority> authorities = Arrays.stream(permissions)
+                .map(p -> (GrantedAuthority) new SimpleGrantedAuthority("ROLE_" + p))
+                .toList();
+        return jwt().jwt(builder -> builder
+                        .header("alg", "none")
+                        .claim("sub", "keycloak-user-id"))
+                .authorities(authorities);
+    }
+
     // ---------------------------------------------------------------
     // Test data helpers
     // ---------------------------------------------------------------
@@ -126,6 +146,7 @@ class ItemControllerTest {
             when(itemService.createItem(any(ItemCreateRequest.class))).thenReturn(sampleItemResponse());
 
             mockMvc.perform(post("/api/items")
+                            .with(authenticatedJwt("ITEM_CREATE"))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(validCreateRequest())))
                     .andExpect(status().isCreated())
@@ -141,6 +162,7 @@ class ItemControllerTest {
             request.setSku("");
 
             mockMvc.perform(post("/api/items")
+                            .with(authenticatedJwt())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isBadRequest())
@@ -153,6 +175,7 @@ class ItemControllerTest {
             request.setName("");
 
             mockMvc.perform(post("/api/items")
+                            .with(authenticatedJwt())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isBadRequest())
@@ -165,6 +188,7 @@ class ItemControllerTest {
             request.setSellingPrice(new BigDecimal("-10.00"));
 
             mockMvc.perform(post("/api/items")
+                            .with(authenticatedJwt())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isBadRequest())
@@ -177,9 +201,27 @@ class ItemControllerTest {
                     .thenThrow(new DuplicateResourceException("Item with SKU 'SKU-001' already exists"));
 
             mockMvc.perform(post("/api/items")
+                            .with(authenticatedJwt("ITEM_CREATE"))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(validCreateRequest())))
                     .andExpect(status().isConflict());
+        }
+
+        @Test
+        void shouldReturn403WhenCallerLacksItemCreatePermission() throws Exception {
+            mockMvc.perform(post("/api/items")
+                            .with(authenticatedJwt())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(validCreateRequest())))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        void shouldReturn401WhenUnauthenticated() throws Exception {
+            mockMvc.perform(post("/api/items")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(validCreateRequest())))
+                    .andExpect(status().isUnauthorized());
         }
     }
 
@@ -194,7 +236,7 @@ class ItemControllerTest {
         void shouldReturn200WithItemWhenFound() throws Exception {
             when(itemService.getItemById(42L)).thenReturn(sampleItemResponse());
 
-            mockMvc.perform(get("/api/items/{itemId}", 42L))
+            mockMvc.perform(get("/api/items/{itemId}", 42L).with(authenticatedJwt()))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.id").value(42))
                     .andExpect(jsonPath("$.sku").value("SKU-001"));
@@ -205,7 +247,7 @@ class ItemControllerTest {
             when(itemService.getItemById(999L))
                     .thenThrow(new ResourceNotFoundException("Item not found: 999"));
 
-            mockMvc.perform(get("/api/items/{itemId}", 999L))
+            mockMvc.perform(get("/api/items/{itemId}", 999L).with(authenticatedJwt()))
                     .andExpect(status().isNotFound());
         }
     }
@@ -221,7 +263,7 @@ class ItemControllerTest {
         void shouldReturn200WithItemWhenSkuFound() throws Exception {
             when(itemService.getItemBySku("SKU-001")).thenReturn(sampleItemResponse());
 
-            mockMvc.perform(get("/api/items/sku/{sku}", "SKU-001"))
+            mockMvc.perform(get("/api/items/sku/{sku}", "SKU-001").with(authenticatedJwt()))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.sku").value("SKU-001"));
         }
@@ -231,7 +273,7 @@ class ItemControllerTest {
             when(itemService.getItemBySku("SKU-DOES-NOT-EXIST"))
                     .thenThrow(new ResourceNotFoundException("Item not found for SKU: SKU-DOES-NOT-EXIST"));
 
-            mockMvc.perform(get("/api/items/sku/{sku}", "SKU-DOES-NOT-EXIST"))
+            mockMvc.perform(get("/api/items/sku/{sku}", "SKU-DOES-NOT-EXIST").with(authenticatedJwt()))
                     .andExpect(status().isNotFound());
         }
     }
@@ -249,6 +291,7 @@ class ItemControllerTest {
                     .thenReturn(PageResponse.of(Page.empty(), item -> null));
 
             mockMvc.perform(get("/api/items")
+                            .with(authenticatedJwt())
                             .param("category", "Cement")
                             .param("active", "true")
                             .param("search", "portland"))
@@ -269,11 +312,19 @@ class ItemControllerTest {
         void shouldReturn204WhenDeactivatingItem() throws Exception {
             doNothing().when(itemService).deactivateItem(42L);
 
-            mockMvc.perform(patch("/api/items/{itemId}/deactivate", 42L))
+            mockMvc.perform(patch("/api/items/{itemId}/deactivate", 42L)
+                            .with(authenticatedJwt("ITEM_DEACTIVATE")))
                     .andExpect(status().isNoContent())
                     .andExpect(content().string(""));
 
             verify(itemService).deactivateItem(42L);
+        }
+
+        @Test
+        void shouldReturn403WhenCallerLacksItemDeactivatePermission() throws Exception {
+            mockMvc.perform(patch("/api/items/{itemId}/deactivate", 42L)
+                            .with(authenticatedJwt()))
+                    .andExpect(status().isForbidden());
         }
     }
 
@@ -291,6 +342,7 @@ class ItemControllerTest {
             request.setSortOrder(0);
 
             mockMvc.perform(post("/api/items/{itemId}/images", 42L)
+                            .with(authenticatedJwt("ITEM_EDIT"))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isBadRequest())

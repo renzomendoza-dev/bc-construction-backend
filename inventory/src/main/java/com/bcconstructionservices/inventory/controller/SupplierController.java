@@ -24,6 +24,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -58,6 +59,7 @@ public class SupplierController {
             @ApiResponse(responseCode = "400", description = "Request body failed validation",
                     content = @Content(schema = @Schema(implementation = ValidationErrorResponse.class)))
     })
+    @PreAuthorize("hasRole('SUPPLIER_CREATE')")
     public ResponseEntity<SupplierResponse> createSupplier(@Valid @RequestBody SupplierCreateRequest request) {
         SupplierResponse response = supplierService.createSupplier(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
@@ -77,6 +79,7 @@ public class SupplierController {
             @ApiResponse(responseCode = "404", description = "Supplier not found",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
+    @PreAuthorize("hasRole('SUPPLIER_EDIT')")
     public ResponseEntity<SupplierResponse> updateSupplier(
             @Parameter(description = "Identifier of the supplier to update", example = "5")
             @PathVariable Long supplierId,
@@ -128,6 +131,7 @@ public class SupplierController {
             @ApiResponse(responseCode = "404", description = "Supplier not found",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
+    @PreAuthorize("hasRole('SUPPLIER_DEACTIVATE')")
     public ResponseEntity<Void> deactivateSupplier(
             @Parameter(description = "Identifier of the supplier to deactivate", example = "5")
             @PathVariable Long supplierId) {
@@ -154,6 +158,7 @@ public class SupplierController {
             @ApiResponse(responseCode = "404", description = "Item or supplier not found",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
+    @PreAuthorize("hasRole('SUPPLIER_LINK_ITEM')")
     public ResponseEntity<ItemSupplierResponse> linkItemToSupplier(@Valid @RequestBody ItemSupplierRequest request) {
         return ResponseEntity.ok(supplierService.linkItemToSupplier(request));
     }

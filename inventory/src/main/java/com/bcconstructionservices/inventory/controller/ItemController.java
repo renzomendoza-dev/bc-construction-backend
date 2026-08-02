@@ -18,6 +18,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -57,6 +58,7 @@ public class ItemController {
             @ApiResponse(responseCode = "409", description = "An item with this SKU already exists",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
+    @PreAuthorize("hasRole('ITEM_CREATE')")
     public ResponseEntity<ItemResponse> createItem(@Valid @RequestBody ItemCreateRequest request) {
         ItemResponse response = itemService.createItem(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
@@ -78,6 +80,7 @@ public class ItemController {
             @ApiResponse(responseCode = "409", description = "Another item already uses the requested SKU",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
+    @PreAuthorize("hasRole('ITEM_EDIT')")
     public ResponseEntity<ItemResponse> updateItem(
             @Parameter(description = "Identifier of the item to update", example = "1")
             @PathVariable Long itemId,
@@ -151,6 +154,7 @@ public class ItemController {
             @ApiResponse(responseCode = "404", description = "Item not found",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
+    @PreAuthorize("hasRole('ITEM_DEACTIVATE')")
     public ResponseEntity<Void> deactivateItem(
             @Parameter(description = "Identifier of the item to deactivate", example = "1")
             @PathVariable Long itemId) {
@@ -172,6 +176,7 @@ public class ItemController {
             @ApiResponse(responseCode = "404", description = "Item not found",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
+    @PreAuthorize("hasRole('ITEM_EDIT')")
     public ResponseEntity<ItemImageResponse> addItemImage(
             @Parameter(description = "Identifier of the item to attach the image to", example = "1")
             @PathVariable Long itemId,
@@ -186,6 +191,7 @@ public class ItemController {
             @ApiResponse(responseCode = "204", description = "Image removed"),
             @ApiResponse(responseCode = "404", description = "Image not found")
     })
+    @PreAuthorize("hasRole('ITEM_EDIT')")
     public ResponseEntity<Void> removeItemImage(
             @Parameter(description = "Identifier of the image to remove", example = "42")
             @PathVariable Long imageId) {
@@ -231,6 +237,7 @@ public class ItemController {
                     + "belong to this item",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
+    @PreAuthorize("hasRole('ITEM_EDIT')")
     public ResponseEntity<List<ItemImageResponse>> reorderImages(
             @Parameter(description = "Identifier of the item whose images are being reordered", example = "1")
             @PathVariable Long itemId,
@@ -247,6 +254,7 @@ public class ItemController {
     @PostMapping(
             value = "/{itemId}/images/upload",
             consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasRole('ITEM_EDIT')")
     public ResponseEntity<ItemImageResponse> uploadItemImage(
             @PathVariable Long itemId,
             @RequestParam("image") MultipartFile image,
