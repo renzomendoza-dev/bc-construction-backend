@@ -1,0 +1,25 @@
+spring:
+  jpa:
+    show-sql: false
+
+server:
+  error:
+    include-stacktrace: never
+    include-message: never
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+logging:
+  level:
+    com.bcconstructionservices: INFO
+
+app:
+  cors:
+    # No localhost fallback in prod — an operator who forgets to set this
+    # should get a hard startup failure, not a CORS policy quietly pointing
+    # at localhost.
+    allowed-origins: ${CORS_ALLOWED_ORIGINS}

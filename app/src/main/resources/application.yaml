@@ -8,6 +8,10 @@ keycloak:
     client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET}
 
 spring:
+  profiles:
+    # Flip this to "prod" to switch environments. Note: an env var named
+    # SPRING_PROFILES_ACTIVE, if set, takes precedence over this value.
+    active: dev
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:backend}
     username: ${DB_USERNAME:postgres}
@@ -54,5 +58,7 @@ app:
 
 logging:
   level:
-    com.bcconstructionservices.inventory: ${LOG_LEVEL:INFO}
+    # Package-wide default; application-dev.yaml/application-prod.yaml override
+    # com.bcconstructionservices specifically (DEBUG/INFO) per environment.
+    root: ${LOG_LEVEL:INFO}
 
