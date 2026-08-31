@@ -18,6 +18,12 @@ current user for `createdBy`/`confirmedBy` fields).
 | `Supplier` | A vendor, with contact info and an `active` flag. |
 | `ItemSupplier` | Many-to-many link between `Item` and `Supplier`. |
 | `PurchaseReceipt` / `PurchaseReceiptLine` | A purchase from a supplier into a warehouse; draft until `confirmed`, at which point its lines post `IN` stock movements. |
+| `MaterialRequest` / `MaterialRequestLineItem` | A site's request for materials to be pulled from a `MAIN` warehouse; editable until fulfillment starts, then locked. |
+| `TransferBatch` / `TransferLineItem` | A batch move of stock from a `MAIN` warehouse to a `SITE` warehouse; optionally fulfills a `MaterialRequest`. |
+
+`Warehouse.type` (`MAIN` or `SITE`) distinguishes a stocked main/branch warehouse from a
+project-site warehouse that only receives stock via transfer batches — material requests can
+only be created against a `SITE` warehouse, and transfer batches move stock from `MAIN` to `SITE`.
 
 ## API endpoints
 
@@ -70,6 +76,22 @@ All endpoints return `application/json` and validate request bodies with `@Valid
 - `GET /api/purchase-receipts/item/{itemId}/history` — purchase history for an item
 - `POST /api/purchase-receipts/{receiptId}/image` (multipart) — upload a receipt image
 
+### Material requests — `/api/inventory/material-requests`
+- `POST /api/inventory/material-requests` — create a request against a `SITE` warehouse (400 if the warehouse isn't type `SITE`)
+- `PUT /api/inventory/material-requests/{id}` — full-replacement update of `dateNeeded`/`notes`/`lines` (explicit `null` clears a field); `siteWarehouseId` is immutable and not part of the body. 422 once status is `PARTIALLY_FULFILLED` or `FULFILLED`
+- `GET /api/inventory/material-requests/{id}` — get by id
+- `GET /api/inventory/material-requests` — paginated list, filterable by `siteWarehouseId`/`status`
+
+There is deliberately no fulfill endpoint here — fulfillment happens by creating a transfer
+batch with `sourceMaterialRequestId` set and submitting it, which is what advances this
+request's status.
+
+### Transfer batches — `/api/inventory/transfer-batches`
+- `POST /api/inventory/transfer-batches` — create a draft batch (optionally against a `MaterialRequest` via `sourceMaterialRequestId`)
+- `POST /api/inventory/transfer-batches/{id}/submit` — submit a draft batch, moving stock from the `MAIN` warehouse to the `SITE` warehouse for each line and updating the source request's status, if any
+- `GET /api/inventory/transfer-batches/{id}` — get by id
+- `GET /api/inventory/transfer-batches` — paginated list
+
 ## Stock adjustments vs. transfers
 
 - **`POST /api/inventory/adjust`** — single-location change. `type` determines direction
@@ -106,6 +128,7 @@ app:
 | `InvalidStockOperationException` | 400 |
 | `InactiveResourceException` | 400 |
 | `ReceiptProcessingException` | 422 |
+| `MaterialRequestNotEditableException` | 422 |
 | Bean validation failures | 400 (field-level `ValidationErrorResponse`) |
 | Malformed JSON | 400 |
 | `IllegalStateException` | 401 |
@@ -116,11 +139,13 @@ app:
 
 ## Database migrations
 
-Flyway migrations live in `src/main/resources/db/migration`, `V1` through `V14`, covering
-items, item images, suppliers, item-supplier links, warehouses, storage locations, inventory
-stock, stock movements, purchase receipts and lines, and later additions (audit columns on
-stock movements/purchase receipts, a movement-type column rename, and an `active` flag on
-storage locations).
+Flyway migrations live in `src/main/resources/db/migration`, `V2` through `V20` (module-local —
+the full version sequence is shared and global across all modules, so this module doesn't own
+every number), covering items, item images, suppliers, item-supplier links, warehouses, storage
+locations, inventory stock, stock movements, purchase receipts and lines, a `type` column added
+to `warehouse` (`MAIN`/`SITE`), and the transfer batch / material request tables. Dev-only demo
+data seeds live separately under `app/src/main/resources/db/dev-data` and are only loaded when
+the `dev` Spring profile's `flyway.locations` override is active — never in prod.
 
 ## Testing
 
