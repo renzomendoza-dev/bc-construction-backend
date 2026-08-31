@@ -13,6 +13,7 @@ import com.bcconstructionservices.inventory.repository.ItemSupplierRepository;
 import com.bcconstructionservices.inventory.repository.PurchaseReceiptLineRepository;
 import com.bcconstructionservices.inventory.repository.PurchaseReceiptRepository;
 import com.bcconstructionservices.inventory.repository.SupplierRepository;
+import com.bcconstructionservices.inventory.repository.TransferBatchRepository;
 import com.bcconstructionservices.inventory.repository.WarehouseRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -114,6 +115,8 @@ class PurchaseReceiptServiceConfirmTest {
     private PurchaseReceiptLineMapper purchaseReceiptLineMapper;
     @Mock
     private WarehouseRepository warehouseRepository;
+    @Mock
+    private TransferBatchRepository transferBatchRepository;
 
     @InjectMocks
     private PurchaseReceiptService purchaseReceiptService;
@@ -456,6 +459,74 @@ class PurchaseReceiptServiceConfirmTest {
             // Only cement's ItemSupplier upsert completed before the failure;
             // rebar's never runs (it fails first) and gravel's is never reached.
             verify(itemSupplierRepository, times(1)).save(any(ItemSupplier.class));
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // Unblocking a linked TransferBatch
+    // ---------------------------------------------------------------
+
+    @Nested
+    class UnblockLinkedTransferBatch {
+
+        @Test
+        void shouldFlipLinkedTransferBatchBackToDraftWhenStillAwaitingPurchase() {
+            PurchaseReceiptLine line = buildLine(1L, cementItem, 50, "245.00");
+            PurchaseReceipt receipt = buildReceipt(List.of(line));
+            receipt.setFulfillsTransferBatchId(42L);
+            givenReceiptExists(receipt);
+            givenAdjustStockSucceedsForAnyLine();
+            givenNoExistingItemSupplierRows();
+            givenItemSupplierSaveEchoesArgument();
+            givenReceiptSaveEchoesArgument();
+
+            TransferBatch blockedBatch = new TransferBatch();
+            blockedBatch.setId(42L);
+            blockedBatch.setStatus(TransferBatchStatus.AWAITING_PURCHASE);
+            when(transferBatchRepository.findById(42L)).thenReturn(Optional.of(blockedBatch));
+
+            purchaseReceiptService.confirmPurchaseReceipt(RECEIPT_ID);
+
+            ArgumentCaptor<TransferBatch> captor = ArgumentCaptor.forClass(TransferBatch.class);
+            verify(transferBatchRepository).save(captor.capture());
+            assertThat(captor.getValue().getStatus()).isEqualTo(TransferBatchStatus.DRAFT);
+        }
+
+        @Test
+        void shouldNotTouchLinkedTransferBatchWhenItIsNoLongerAwaitingPurchase() {
+            PurchaseReceiptLine line = buildLine(1L, cementItem, 50, "245.00");
+            PurchaseReceipt receipt = buildReceipt(List.of(line));
+            receipt.setFulfillsTransferBatchId(42L);
+            givenReceiptExists(receipt);
+            givenAdjustStockSucceedsForAnyLine();
+            givenNoExistingItemSupplierRows();
+            givenItemSupplierSaveEchoesArgument();
+            givenReceiptSaveEchoesArgument();
+
+            TransferBatch alreadyCompletedBatch = new TransferBatch();
+            alreadyCompletedBatch.setId(42L);
+            alreadyCompletedBatch.setStatus(TransferBatchStatus.COMPLETED);
+            when(transferBatchRepository.findById(42L)).thenReturn(Optional.of(alreadyCompletedBatch));
+
+            purchaseReceiptService.confirmPurchaseReceipt(RECEIPT_ID);
+
+            verify(transferBatchRepository, never()).save(any());
+        }
+
+        @Test
+        void shouldNotInteractWithTransferBatchRepositoryWhenFulfillsTransferBatchIdIsNull() {
+            PurchaseReceiptLine line = buildLine(1L, cementItem, 50, "245.00");
+            PurchaseReceipt receipt = buildReceipt(List.of(line));
+            // fulfillsTransferBatchId left null.
+            givenReceiptExists(receipt);
+            givenAdjustStockSucceedsForAnyLine();
+            givenNoExistingItemSupplierRows();
+            givenItemSupplierSaveEchoesArgument();
+            givenReceiptSaveEchoesArgument();
+
+            purchaseReceiptService.confirmPurchaseReceipt(RECEIPT_ID);
+
+            verifyNoInteractions(transferBatchRepository);
         }
     }
 

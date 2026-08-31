@@ -64,6 +64,18 @@ public class PurchaseReceipt {
     @Column(name = "notes")
     private String notes;
 
+    /**
+     * Set when this receipt is purchasing the shortfall for a TransferBatch
+     * that failed to submit on insufficient stock (status AWAITING_PURCHASE);
+     * null for a receipt with no such origin. Real FK — unlike
+     * TransferBatch.sourceMaterialRequestId, there's no migration-order
+     * constraint here (transfer_batch already existed when this column was
+     * added), and this table already uses real FKs for its other
+     * cross-references (supplier, warehouse, created_by, confirmed_by).
+     */
+    @Column(name = "fulfills_transfer_batch_id")
+    private Long fulfillsTransferBatchId;
+
     @CreatedBy
     @Column(name = "created_by", updatable = false)
     private Long createdBy;

@@ -6,6 +6,7 @@ import com.bcconstructionservices.inventory.dto.PurchaseReceiptResponse;
 import com.bcconstructionservices.inventory.entity.*;
 import com.bcconstructionservices.inventory.exception.ReceiptProcessingException;
 import com.bcconstructionservices.inventory.exception.ResourceNotFoundException;
+import com.bcconstructionservices.inventory.exception.TransferBatchNotAwaitingPurchaseException;
 import com.bcconstructionservices.inventory.mapper.PurchaseReceiptLineMapper;
 import com.bcconstructionservices.inventory.mapper.PurchaseReceiptLineMapperImpl;
 import com.bcconstructionservices.inventory.mapper.PurchaseReceiptMapperImpl;
@@ -96,6 +97,8 @@ class PurchaseReceiptServiceCreateTest {
     private PurchaseReceiptLineMapper purchaseReceiptLineMapper;
     @Mock
     private WarehouseRepository warehouseRepository;
+    @Mock
+    private TransferBatchRepository transferBatchRepository;
 
     @InjectMocks
     private PurchaseReceiptService purchaseReceiptService;
@@ -291,6 +294,80 @@ class PurchaseReceiptServiceCreateTest {
             ArgumentCaptor<PurchaseReceipt> mappedCaptor = ArgumentCaptor.forClass(PurchaseReceipt.class);
             verify(purchaseReceiptMapper).toResponse(mappedCaptor.capture());
             assertThat(mappedCaptor.getValue()).isSameAs(saved);
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // fulfillsTransferBatchId
+    // ---------------------------------------------------------------
+
+    @Nested
+    class FulfillsTransferBatchIdValidation {
+
+        private TransferBatch buildBatch(Long id, TransferBatchStatus status) {
+            TransferBatch batch = new TransferBatch();
+            batch.setId(id);
+            batch.setStatus(status);
+            return batch;
+        }
+
+        @Test
+        void shouldAcceptAndPersistFulfillsTransferBatchIdWhenBatchIsAwaitingPurchase() {
+            givenValidSupplierAndItems();
+            givenSavesEchoTheirArgument();
+            when(transferBatchRepository.findById(42L))
+                    .thenReturn(Optional.of(buildBatch(42L, TransferBatchStatus.AWAITING_PURCHASE)));
+
+            PurchaseReceiptCreateRequest request = multiLineRequest();
+            request.setFulfillsTransferBatchId(42L);
+
+            purchaseReceiptService.createPurchaseReceipt(request);
+
+            PurchaseReceipt saved = captureSavedReceipt();
+            assertThat(saved.getFulfillsTransferBatchId()).isEqualTo(42L);
+        }
+
+        @Test
+        void shouldThrowResourceNotFoundExceptionWhenFulfillsTransferBatchIdDoesNotExist() {
+            givenValidSupplierAndItems();
+            when(transferBatchRepository.findById(999L)).thenReturn(Optional.empty());
+
+            PurchaseReceiptCreateRequest request = multiLineRequest();
+            request.setFulfillsTransferBatchId(999L);
+
+            assertThatExceptionOfType(ResourceNotFoundException.class)
+                    .isThrownBy(() -> purchaseReceiptService.createPurchaseReceipt(request));
+
+            assertNothingWasSaved();
+        }
+
+        @Test
+        void shouldThrowTransferBatchNotAwaitingPurchaseExceptionWhenBatchStatusIsNotAwaitingPurchase() {
+            givenValidSupplierAndItems();
+            when(transferBatchRepository.findById(42L))
+                    .thenReturn(Optional.of(buildBatch(42L, TransferBatchStatus.DRAFT)));
+
+            PurchaseReceiptCreateRequest request = multiLineRequest();
+            request.setFulfillsTransferBatchId(42L);
+
+            assertThatExceptionOfType(TransferBatchNotAwaitingPurchaseException.class)
+                    .isThrownBy(() -> purchaseReceiptService.createPurchaseReceipt(request))
+                    .satisfies(ex -> {
+                        assertThat(ex.getTransferBatchId()).isEqualTo(42L);
+                        assertThat(ex.getStatus()).isEqualTo(TransferBatchStatus.DRAFT);
+                    });
+
+            assertNothingWasSaved();
+        }
+
+        @Test
+        void shouldNotInteractWithTransferBatchRepositoryWhenFulfillsTransferBatchIdIsNull() {
+            givenValidSupplierAndItems();
+            givenSavesEchoTheirArgument();
+
+            purchaseReceiptService.createPurchaseReceipt(multiLineRequest());
+
+            verifyNoInteractions(transferBatchRepository);
         }
     }
 

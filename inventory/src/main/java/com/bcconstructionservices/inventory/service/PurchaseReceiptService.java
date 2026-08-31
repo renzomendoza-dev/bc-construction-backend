@@ -4,6 +4,7 @@ import com.bcconstructionservices.inventory.dto.*;
 import com.bcconstructionservices.inventory.entity.*;
 import com.bcconstructionservices.inventory.exception.ReceiptProcessingException;
 import com.bcconstructionservices.inventory.exception.ResourceNotFoundException;
+import com.bcconstructionservices.inventory.exception.TransferBatchNotAwaitingPurchaseException;
 import com.bcconstructionservices.inventory.mapper.PurchaseReceiptLineMapper;
 import com.bcconstructionservices.inventory.mapper.PurchaseReceiptMapper;
 import com.bcconstructionservices.inventory.repository.*;
@@ -39,6 +40,7 @@ public class PurchaseReceiptService {
     private final SupplierRepository supplierRepository;
     private final ItemRepository itemRepository;
     private final WarehouseRepository warehouseRepository;
+    private final TransferBatchRepository transferBatchRepository;
     private final InventoryService inventoryService;
     private final PurchaseReceiptMapper purchaseReceiptMapper;
     private final FileStorageService fileStorageService;
@@ -66,10 +68,26 @@ public class PurchaseReceiptService {
             throw new ReceiptProcessingException("Purchase receipt must contain at least one line");
         }
 
+        // A receipt can only be linked to a batch that's actually blocked on
+        // insufficient stock — fulfillsTransferBatchId isn't an ignore=true
+        // mapper field, so this check runs before toEntity() rather than
+        // re-reading it off the built entity.
+        if (request.getFulfillsTransferBatchId() != null) {
+            TransferBatch fulfillsTransferBatch = transferBatchRepository.findById(request.getFulfillsTransferBatchId())
+                    .orElseThrow(() -> new ResourceNotFoundException("TransferBatch", request.getFulfillsTransferBatchId()));
+            if (fulfillsTransferBatch.getStatus() != TransferBatchStatus.AWAITING_PURCHASE) {
+                throw new TransferBatchNotAwaitingPurchaseException(
+                        request.getFulfillsTransferBatchId(), fulfillsTransferBatch.getStatus());
+            }
+        }
+
         // purchaseReceiptMapper.toEntity only covers receiptNumber/purchaseDate/
         // imageUrl/notes — supplier, warehouse, lines, totalAmount, and confirmed(At)
         // are all ignore=true by design (see PurchaseReceiptMapper's javadoc), so
-        // they're still assembled here.
+        // they're still assembled here. fulfillsTransferBatchId IS covered by the
+        // mapper (plain 1:1 copy, validated above) since it needs no repository
+        // lookup to attach — unlike supplier/warehouse it's stored as a plain id,
+        // not a managed association.
         PurchaseReceipt receipt = purchaseReceiptMapper.toEntity(request);
         receipt.setSupplier(supplier);
         receipt.setWarehouse(warehouse);
@@ -158,7 +176,33 @@ public class PurchaseReceiptService {
         receipt.setConfirmedAt(Instant.now());
         PurchaseReceipt saved = purchaseReceiptRepository.save(receipt);
 
+        // Read off receipt, not saved — save()'s return value isn't
+        // guaranteed to echo the argument (only a stubbed test double does),
+        // and receipt already carries this field regardless.
+        if (receipt.getFulfillsTransferBatchId() != null) {
+            unblockLinkedTransferBatch(receipt.getFulfillsTransferBatchId());
+        }
+
         return purchaseReceiptMapper.toResponse(saved);
+    }
+
+    /**
+     * Semi-automatic unblock (per the chosen design): confirming a receipt
+     * that fulfills a blocked batch flips that batch back to DRAFT so it's
+     * ready to resubmit, but actually resubmitting (POST /{id}/submit) stays
+     * a manual step for a person to trigger. Only flips a batch that's still
+     * AWAITING_PURCHASE — if it's since moved on (e.g. resubmitted and
+     * completed some other way), this silently no-ops rather than clobbering
+     * that state, same pattern as MaterialRequestService's no-op-if-missing
+     * handling of a stale cross-reference.
+     */
+    private void unblockLinkedTransferBatch(Long transferBatchId) {
+        transferBatchRepository.findById(transferBatchId).ifPresent(batch -> {
+            if (batch.getStatus() == TransferBatchStatus.AWAITING_PURCHASE) {
+                batch.setStatus(TransferBatchStatus.DRAFT);
+                transferBatchRepository.save(batch);
+            }
+        });
     }
 
     @Transactional(readOnly = true)
@@ -170,8 +214,10 @@ public class PurchaseReceiptService {
 
     @Transactional(readOnly = true)
     public PageResponse<PurchaseReceiptResponse> listPurchaseReceipts(Long supplierId, LocalDate fromDate,
-                                                                      LocalDate toDate, Pageable pageable) {
-        Page<PurchaseReceipt> page = purchaseReceiptRepository.search(supplierId, fromDate, toDate, pageable);
+                                                                      LocalDate toDate, Long fulfillsTransferBatchId,
+                                                                      Pageable pageable) {
+        Page<PurchaseReceipt> page =
+                purchaseReceiptRepository.search(supplierId, fromDate, toDate, fulfillsTransferBatchId, pageable);
         return PageResponse.of(page, purchaseReceiptMapper::toResponse);
     }
 

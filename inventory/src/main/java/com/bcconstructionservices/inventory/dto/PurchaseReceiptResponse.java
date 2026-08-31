@@ -52,6 +52,10 @@ public class PurchaseReceiptResponse {
     @Schema(description = "Optional free-text notes about the purchase", example = "Partial shipment, remainder expected next week")
     private String notes;
 
+    @Schema(description = "Identifier of the TransferBatch this receipt is purchasing the shortfall for, if any",
+            example = "42")
+    private Long fulfillsTransferBatchId;
+
     @Schema(description = "Line items purchased on this receipt")
     private List<PurchaseReceiptLineResponse> lines;
 

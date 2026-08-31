@@ -36,7 +36,11 @@ public class TransferBatchResponse {
     @Schema(description = "Name of the warehouse (or site) stock was moved to", example = "Site Warehouse - Sta. Maria Project")
     private String destinationWarehouseName;
 
-    @Schema(description = "Current status of the batch", example = "DRAFT", allowableValues = {"DRAFT", "SUBMITTED", "COMPLETED"})
+    @Schema(description = "Current status of the batch. AWAITING_PURCHASE means the last submit attempt failed "
+            + "on insufficient stock (409) — see POST /{id}/submit — and this batch is blocked until a "
+            + "PurchaseReceipt with fulfillsTransferBatchId set to this batch's id is confirmed, which flips it "
+            + "back to DRAFT so it can be resubmitted.",
+            example = "DRAFT", allowableValues = {"DRAFT", "SUBMITTED", "COMPLETED", "AWAITING_PURCHASE"})
     private TransferBatchStatus status;
 
     @Schema(description = "ID of the user who initiated this batch", example = "3")

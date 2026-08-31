@@ -75,6 +75,18 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(TransferBatchNotAwaitingPurchaseException.class)
+    public ResponseEntity<ErrorResponse> handleTransferBatchNotAwaitingPurchase(
+            TransferBatchNotAwaitingPurchaseException ex, HttpServletRequest request) {
+        return buildResponse(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(TransferBatchNotDeletableException.class)
+    public ResponseEntity<ErrorResponse> handleTransferBatchNotDeletable(
+            TransferBatchNotDeletableException ex, HttpServletRequest request) {
+        return buildResponse(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), request);
+    }
+
     /**
      * Thrown by {@code @PreAuthorize} when an authenticated caller lacks the
      * required permission. Handled explicitly here — otherwise it would be

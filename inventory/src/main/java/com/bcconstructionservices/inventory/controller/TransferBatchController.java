@@ -22,12 +22,14 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -78,7 +80,11 @@ public class TransferBatchController {
                     + "transaction — if any line fails (e.g. insufficient stock), nothing is applied and the "
                     + "batch stays in its prior state. If this batch fulfills a MaterialRequest "
                     + "(sourceMaterialRequestId was set on creation), that request's status is updated to "
-                    + "FULFILLED or PARTIALLY_FULFILLED depending on whether every requested quantity was covered."
+                    + "FULFILLED or PARTIALLY_FULFILLED depending on whether every requested quantity was covered. "
+                    + "If the failure was specifically insufficient stock (409), this batch's status is also set "
+                    + "to AWAITING_PURCHASE — create a PurchaseReceipt with fulfillsTransferBatchId set to this "
+                    + "batch's id for the shortfall item(s); confirming that receipt flips this batch back to "
+                    + "DRAFT so it can be resubmitted (see POST /api/purchase-receipts)."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Batch submitted and applied to inventory",
@@ -89,7 +95,7 @@ public class TransferBatchController {
             @ApiResponse(responseCode = "404", description = "Transfer batch not found",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
             @ApiResponse(responseCode = "409", description = "Insufficient stock at the origin warehouse to "
-                    + "cover one of the batch's lines",
+                    + "cover one of the batch's lines. The batch's status is also set to AWAITING_PURCHASE.",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     @PreAuthorize("hasRole('TRANSFER_BATCH_SUBMIT')")
@@ -97,6 +103,30 @@ public class TransferBatchController {
             @Parameter(description = "Identifier of the transfer batch to submit", example = "42")
             @PathVariable Long id) {
         return ResponseEntity.ok(transferBatchService.submit(id));
+    }
+
+    @DeleteMapping("/{id}")
+    @Operation(
+            summary = "Delete a draft transfer batch",
+            description = "Only a DRAFT batch can be deleted (422 otherwise) — SUBMITTED and COMPLETED batches "
+                    + "have already moved stock, and AWAITING_PURCHASE batches are actively referenced by a "
+                    + "fulfilling PurchaseReceipt. If this batch has sourceMaterialRequestId set, deleting it "
+                    + "does NOT touch that MaterialRequest — the request is simply left with no draft transfer "
+                    + "against it, same as if this batch had never been created."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "204", description = "Batch deleted"),
+            @ApiResponse(responseCode = "404", description = "Transfer batch not found",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "422", description = "The batch is not DRAFT and cannot be deleted",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasRole('TRANSFER_BATCH_DELETE')")
+    public void delete(
+            @Parameter(description = "Identifier of the transfer batch to delete", example = "42")
+            @PathVariable Long id) {
+        transferBatchService.delete(id);
     }
 
     @GetMapping("/{id}")

@@ -27,7 +27,11 @@ public interface PurchaseReceiptRepository extends JpaRepository<PurchaseReceipt
     Optional<PurchaseReceipt> findByIdWithSupplierAndWarehouse(@Param("id") Long id);
 
     /**
-     * Filters receipts by optional supplier and purchaseDate range (both bounds inclusive).
+     * Filters receipts by optional supplier, purchaseDate range (both bounds
+     * inclusive), and fulfillsTransferBatchId — the last one is how a client
+     * finds "the receipt resolving batch #Y" from the TransferBatch side,
+     * given TransferBatchResponse doesn't embed the reverse reference itself
+     * (GET /api/purchase-receipts?fulfillsTransferBatchId=Y).
      */
     @Query("""
             SELECT pr FROM PurchaseReceipt pr
@@ -36,9 +40,11 @@ public interface PurchaseReceiptRepository extends JpaRepository<PurchaseReceipt
             WHERE (:supplierId IS NULL OR pr.supplier.id = :supplierId)
               AND (:fromDate IS NULL OR pr.purchaseDate >= :fromDate)
               AND (:toDate IS NULL OR pr.purchaseDate <= :toDate)
+              AND (:fulfillsTransferBatchId IS NULL OR pr.fulfillsTransferBatchId = :fulfillsTransferBatchId)
             """)
     Page<PurchaseReceipt> search(@Param("supplierId") Long supplierId,
                                   @Param("fromDate") LocalDate fromDate,
                                   @Param("toDate") LocalDate toDate,
+                                  @Param("fulfillsTransferBatchId") Long fulfillsTransferBatchId,
                                   Pageable pageable);
 }

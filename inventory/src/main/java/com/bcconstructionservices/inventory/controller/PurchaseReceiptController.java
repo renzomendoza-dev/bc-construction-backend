@@ -52,17 +52,22 @@ public class PurchaseReceiptController {
             summary = "Create a draft purchase receipt",
             description = "Records a purchase receipt and its line items as a draft. lineTotal and totalAmount "
                     + "are always computed from quantity/unitCost. This step does NOT affect stock — the receipt "
-                    + "must be confirmed via POST /{receiptId}/confirm before it changes inventory."
+                    + "must be confirmed via POST /{receiptId}/confirm before it changes inventory. If "
+                    + "fulfillsTransferBatchId is set, the referenced batch must currently be status "
+                    + "AWAITING_PURCHASE (422 if not) — confirming this receipt later flips that batch back to "
+                    + "DRAFT (see POST /api/inventory/transfer-batches/{id}/submit)."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "Draft receipt created",
                     content = @Content(schema = @Schema(implementation = PurchaseReceiptResponse.class))),
             @ApiResponse(responseCode = "400", description = "Request body failed validation",
                     content = @Content(schema = @Schema(implementation = ValidationErrorResponse.class))),
-            @ApiResponse(responseCode = "404", description = "Supplier or warehouse not found",
+            @ApiResponse(responseCode = "404", description = "Supplier, warehouse, or fulfillsTransferBatchId "
+                    + "not found",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
-            @ApiResponse(responseCode = "422", description = "The receipt has no lines, or a line references an "
-                    + "item id that doesn't exist",
+            @ApiResponse(responseCode = "422", description = "The receipt has no lines, a line references an "
+                    + "item id that doesn't exist, or fulfillsTransferBatchId references a batch that isn't "
+                    + "status AWAITING_PURCHASE",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     @PreAuthorize("hasRole('PURCHASE_RECEIPT_CREATE')")
@@ -80,7 +85,9 @@ public class PurchaseReceiptController {
                     + "warehouse, and that item+supplier's most recent unit cost is updated to the line's "
                     + "unitCost. The whole operation is one transaction — if any line fails, nothing is applied. "
                     + "A receipt can only be confirmed once; confirming an already-confirmed receipt is rejected "
-                    + "with 422."
+                    + "with 422. If fulfillsTransferBatchId was set on this receipt and that batch is still "
+                    + "AWAITING_PURCHASE, confirming also flips that batch back to DRAFT — resubmitting it "
+                    + "(POST /api/inventory/transfer-batches/{id}/submit) remains a separate, manual step."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Receipt confirmed and applied to inventory",
@@ -122,7 +129,10 @@ public class PurchaseReceiptController {
     @Operation(
             summary = "List purchase receipts",
             description = "Returns a paged list of purchase receipts (both draft and confirmed), optionally "
-                    + "filtered by supplier and/or a purchaseDate range. fromDate and toDate are both inclusive."
+                    + "filtered by supplier, a purchaseDate range, and/or fulfillsTransferBatchId. fromDate and "
+                    + "toDate are both inclusive. fulfillsTransferBatchId is how to find \"the receipt resolving "
+                    + "batch #Y\" from a blocked TransferBatch — TransferBatchResponse doesn't embed the reverse "
+                    + "reference itself."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Page of purchase receipts",
@@ -137,8 +147,11 @@ public class PurchaseReceiptController {
             @Parameter(description = "Only include receipts purchased on or before this date (inclusive)",
                     example = "2026-07-18")
             @RequestParam(required = false) LocalDate toDate,
+            @Parameter(description = "Filter to the receipt(s) that fulfill this transfer batch id", example = "42")
+            @RequestParam(required = false) Long fulfillsTransferBatchId,
             @ParameterObject Pageable pageable) {
-        return ResponseEntity.ok(purchaseReceiptService.listPurchaseReceipts(supplierId, fromDate, toDate, pageable));
+        return ResponseEntity.ok(purchaseReceiptService.listPurchaseReceipts(
+                supplierId, fromDate, toDate, fulfillsTransferBatchId, pageable));
     }
 
     @GetMapping("/item/{itemId}/history")

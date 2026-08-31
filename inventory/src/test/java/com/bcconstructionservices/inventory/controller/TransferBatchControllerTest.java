@@ -4,7 +4,9 @@ import com.bcconstructionservices.inventory.dto.TransferBatchCreateRequest;
 import com.bcconstructionservices.inventory.dto.TransferBatchResponse;
 import com.bcconstructionservices.inventory.dto.TransferLineItemRequest;
 import com.bcconstructionservices.inventory.entity.TransferBatchStatus;
+import com.bcconstructionservices.inventory.exception.InsufficientStockException;
 import com.bcconstructionservices.inventory.exception.ResourceNotFoundException;
+import com.bcconstructionservices.inventory.exception.TransferBatchNotDeletableException;
 import com.bcconstructionservices.inventory.service.TransferBatchService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Nested;
@@ -22,8 +24,10 @@ import java.util.Arrays;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -162,6 +166,16 @@ class TransferBatchControllerTest {
         }
 
         @Test
+        void shouldReturn409WhenInsufficientStockBlocksTheBatch() throws Exception {
+            when(transferBatchService.submit(15L))
+                    .thenThrow(new InsufficientStockException(1L, 1L, 50, 10));
+
+            mockMvc.perform(post("/api/inventory/transfer-batches/{id}/submit", 15L)
+                            .with(authenticatedJwt("TRANSFER_BATCH_SUBMIT")))
+                    .andExpect(status().isConflict());
+        }
+
+        @Test
         void shouldReturn403WhenCallerLacksTransferBatchSubmitPermission() throws Exception {
             mockMvc.perform(post("/api/inventory/transfer-batches/{id}/submit", 15L)
                             .with(authenticatedJwt()))
@@ -171,6 +185,54 @@ class TransferBatchControllerTest {
         @Test
         void shouldReturn401WhenUnauthenticated() throws Exception {
             mockMvc.perform(post("/api/inventory/transfer-batches/{id}/submit", 15L))
+                    .andExpect(status().isUnauthorized());
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // DELETE /api/inventory/transfer-batches/{id}
+    // ---------------------------------------------------------------
+
+    @Nested
+    class DeleteTests {
+
+        @Test
+        void shouldReturn204WhenBatchIsDraft() throws Exception {
+            mockMvc.perform(delete("/api/inventory/transfer-batches/{id}", 15L)
+                            .with(authenticatedJwt("TRANSFER_BATCH_DELETE")))
+                    .andExpect(status().isNoContent());
+        }
+
+        @Test
+        void shouldReturn404WhenBatchNotFound() throws Exception {
+            doThrow(new ResourceNotFoundException("TransferBatch", 999L))
+                    .when(transferBatchService).delete(999L);
+
+            mockMvc.perform(delete("/api/inventory/transfer-batches/{id}", 999L)
+                            .with(authenticatedJwt("TRANSFER_BATCH_DELETE")))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        void shouldReturn422WhenBatchIsNotDraft() throws Exception {
+            doThrow(new TransferBatchNotDeletableException(15L, TransferBatchStatus.SUBMITTED))
+                    .when(transferBatchService).delete(15L);
+
+            mockMvc.perform(delete("/api/inventory/transfer-batches/{id}", 15L)
+                            .with(authenticatedJwt("TRANSFER_BATCH_DELETE")))
+                    .andExpect(status().isUnprocessableEntity());
+        }
+
+        @Test
+        void shouldReturn403WhenCallerLacksTransferBatchDeletePermission() throws Exception {
+            mockMvc.perform(delete("/api/inventory/transfer-batches/{id}", 15L)
+                            .with(authenticatedJwt()))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        void shouldReturn401WhenUnauthenticated() throws Exception {
+            mockMvc.perform(delete("/api/inventory/transfer-batches/{id}", 15L))
                     .andExpect(status().isUnauthorized());
         }
     }

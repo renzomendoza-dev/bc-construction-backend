@@ -14,8 +14,10 @@ import com.bcconstructionservices.inventory.entity.TransferBatchStatus;
 import com.bcconstructionservices.inventory.entity.TransferLineItem;
 import com.bcconstructionservices.inventory.entity.Warehouse;
 import com.bcconstructionservices.inventory.exception.InactiveResourceException;
+import com.bcconstructionservices.inventory.exception.InsufficientStockException;
 import com.bcconstructionservices.inventory.exception.InvalidStockOperationException;
 import com.bcconstructionservices.inventory.exception.ResourceNotFoundException;
+import com.bcconstructionservices.inventory.exception.TransferBatchNotDeletableException;
 import com.bcconstructionservices.inventory.mapper.TransferBatchMapper;
 import com.bcconstructionservices.inventory.repository.ItemRepository;
 import com.bcconstructionservices.inventory.repository.MaterialRequestLineItemRepository;
@@ -58,6 +60,7 @@ public class TransferBatchService {
     private final InventoryService inventoryService;
     private final TransferBatchMapper transferBatchMapper;
     private final CurrentUserService currentUserService;
+    private final TransferBatchStatusUpdater transferBatchStatusUpdater;
 
     @Transactional
     public TransferBatchResponse createDraft(TransferBatchCreateRequest request) {
@@ -113,7 +116,17 @@ public class TransferBatchService {
      * StockMovement mutations — rather than reimplementing stock math. The whole
      * method is one transaction, so a failure on any line (e.g. insufficient
      * stock) rolls back every transfer already applied earlier in the loop and
-     * the batch is left exactly as it was before submit was called.
+     * the batch's SUBMITTED status set above; the response/exception this
+     * method throws is unchanged from before.
+     *
+     * <p>The one durable side effect of a failed attempt: if the failure was
+     * specifically {@link InsufficientStockException}, the batch is marked
+     * {@link TransferBatchStatus#AWAITING_PURCHASE} via
+     * {@link TransferBatchStatusUpdater}, in a transaction independent of this
+     * doomed one (see its javadoc), so a PurchaseReceipt has something to link
+     * to and unblock later. Other failure types (e.g. no line items, an
+     * inactive warehouse) aren't purchase-shaped problems, so they don't mark
+     * the batch blocked.
      */
     @Transactional
     public TransferBatchResponse submit(Long transferBatchId) {
@@ -128,16 +141,21 @@ public class TransferBatchService {
 
         batch.setStatus(TransferBatchStatus.SUBMITTED);
 
-        for (TransferLineItem line : lineItems) {
-            StockTransferRequest transferRequest = StockTransferRequest.builder()
-                    .itemId(line.getItem().getId())
-                    .fromWarehouseId(batch.getOriginWarehouse().getId())
-                    .toWarehouseId(batch.getDestinationWarehouse().getId())
-                    .quantity(line.getQuantity())
-                    .build();
+        try {
+            for (TransferLineItem line : lineItems) {
+                StockTransferRequest transferRequest = StockTransferRequest.builder()
+                        .itemId(line.getItem().getId())
+                        .fromWarehouseId(batch.getOriginWarehouse().getId())
+                        .toWarehouseId(batch.getDestinationWarehouse().getId())
+                        .quantity(line.getQuantity())
+                        .build();
 
-            // The only call in this codebase permitted to change InventoryStock.quantity.
-            inventoryService.transferStock(transferRequest);
+                // The only call in this codebase permitted to change InventoryStock.quantity.
+                inventoryService.transferStock(transferRequest);
+            }
+        } catch (InsufficientStockException ex) {
+            transferBatchStatusUpdater.markAwaitingPurchase(transferBatchId);
+            throw ex;
         }
 
         batch.setStatus(TransferBatchStatus.COMPLETED);
@@ -189,6 +207,27 @@ public class TransferBatchService {
         TransferBatch batch = transferBatchRepository.findByIdWithWarehouses(transferBatchId)
                 .orElseThrow(() -> new ResourceNotFoundException("TransferBatch", transferBatchId));
         return transferBatchMapper.toResponse(batch);
+    }
+
+    /**
+     * Only a DRAFT batch can be deleted — anything else has either already
+     * moved stock (SUBMITTED/COMPLETED) or is actively referenced by a
+     * fulfilling PurchaseReceipt (AWAITING_PURCHASE). sourceMaterialRequestId
+     * is a plain column, not a real FK (see TransferBatch's javadoc), so
+     * deleting the batch never touches the referenced MaterialRequest —
+     * it's simply left with no draft transfer against it, same as if this
+     * batch had never been created. Line items cascade-delete via
+     * TransferBatch.lineItems' orphanRemoval.
+     */
+    public void delete(Long transferBatchId) {
+        TransferBatch batch = transferBatchRepository.findById(transferBatchId)
+                .orElseThrow(() -> new ResourceNotFoundException("TransferBatch", transferBatchId));
+
+        if (batch.getStatus() != TransferBatchStatus.DRAFT) {
+            throw new TransferBatchNotDeletableException(transferBatchId, batch.getStatus());
+        }
+
+        transferBatchRepository.delete(batch);
     }
 
     @Transactional(readOnly = true)

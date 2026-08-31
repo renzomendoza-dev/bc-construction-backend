@@ -17,6 +17,7 @@ import com.bcconstructionservices.inventory.repository.ItemSupplierRepository;
 import com.bcconstructionservices.inventory.repository.PurchaseReceiptLineRepository;
 import com.bcconstructionservices.inventory.repository.PurchaseReceiptRepository;
 import com.bcconstructionservices.inventory.repository.SupplierRepository;
+import com.bcconstructionservices.inventory.repository.TransferBatchRepository;
 import com.bcconstructionservices.inventory.repository.WarehouseRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -112,6 +113,8 @@ class PurchaseReceiptServiceReadMethodsTest {
     private PurchaseReceiptLineMapper purchaseReceiptLineMapper;
     @Mock
     private WarehouseRepository warehouseRepository;
+    @Mock
+    private TransferBatchRepository transferBatchRepository;
 
     @InjectMocks
     private PurchaseReceiptService purchaseReceiptService;
@@ -218,12 +221,12 @@ class PurchaseReceiptServiceReadMethodsTest {
             PurchaseReceiptResponse responseA = new PurchaseReceiptResponse();
             PurchaseReceiptResponse responseB = new PurchaseReceiptResponse();
 
-            when(purchaseReceiptRepository.search(null, null, null, pageable)).thenReturn(page);
+            when(purchaseReceiptRepository.search(null, null, null, null, pageable)).thenReturn(page);
             when(purchaseReceiptMapper.toResponse(receiptA)).thenReturn(responseA);
             when(purchaseReceiptMapper.toResponse(receiptB)).thenReturn(responseB);
 
             PageResponse<PurchaseReceiptResponse> result =
-                    purchaseReceiptService.listPurchaseReceipts(null, null, null, pageable);
+                    purchaseReceiptService.listPurchaseReceipts(null, null, null, null, pageable);
 
             assertThat(result.getContent()).containsExactly(responseA, responseB);
             assertThat(result.getTotalElements()).isEqualTo(2);
@@ -235,14 +238,14 @@ class PurchaseReceiptServiceReadMethodsTest {
             Page<PurchaseReceipt> page = new PageImpl<>(List.of(receiptA), pageable, 1);
             PurchaseReceiptResponse responseA = new PurchaseReceiptResponse();
 
-            when(purchaseReceiptRepository.search(SUPPLIER_ID, null, null, pageable)).thenReturn(page);
+            when(purchaseReceiptRepository.search(SUPPLIER_ID, null, null, null, pageable)).thenReturn(page);
             when(purchaseReceiptMapper.toResponse(receiptA)).thenReturn(responseA);
 
             PageResponse<PurchaseReceiptResponse> result =
-                    purchaseReceiptService.listPurchaseReceipts(SUPPLIER_ID, null, null, pageable);
+                    purchaseReceiptService.listPurchaseReceipts(SUPPLIER_ID, null, null, null, pageable);
 
             assertThat(result.getContent()).containsExactly(responseA);
-            verify(purchaseReceiptRepository).search(SUPPLIER_ID, null, null, pageable);
+            verify(purchaseReceiptRepository).search(SUPPLIER_ID, null, null, null, pageable);
         }
 
         @Test
@@ -253,23 +256,39 @@ class PurchaseReceiptServiceReadMethodsTest {
             Page<PurchaseReceipt> page = new PageImpl<>(List.of(receiptA), pageable, 1);
             PurchaseReceiptResponse responseA = new PurchaseReceiptResponse();
 
-            when(purchaseReceiptRepository.search(null, fromDate, toDate, pageable)).thenReturn(page);
+            when(purchaseReceiptRepository.search(null, fromDate, toDate, null, pageable)).thenReturn(page);
             when(purchaseReceiptMapper.toResponse(receiptA)).thenReturn(responseA);
 
             PageResponse<PurchaseReceiptResponse> result =
-                    purchaseReceiptService.listPurchaseReceipts(null, fromDate, toDate, pageable);
+                    purchaseReceiptService.listPurchaseReceipts(null, fromDate, toDate, null, pageable);
 
             assertThat(result.getContent()).containsExactly(responseA);
-            verify(purchaseReceiptRepository).search(null, fromDate, toDate, pageable);
+            verify(purchaseReceiptRepository).search(null, fromDate, toDate, null, pageable);
+        }
+
+        @Test
+        void shouldFilterByFulfillsTransferBatchId() {
+            PurchaseReceipt receiptA = buildReceipt(300L, supplierA, LocalDate.of(2026, 7, 10), "OR-2026-004512");
+            Page<PurchaseReceipt> page = new PageImpl<>(List.of(receiptA), pageable, 1);
+            PurchaseReceiptResponse responseA = new PurchaseReceiptResponse();
+
+            when(purchaseReceiptRepository.search(null, null, null, 42L, pageable)).thenReturn(page);
+            when(purchaseReceiptMapper.toResponse(receiptA)).thenReturn(responseA);
+
+            PageResponse<PurchaseReceiptResponse> result =
+                    purchaseReceiptService.listPurchaseReceipts(null, null, null, 42L, pageable);
+
+            assertThat(result.getContent()).containsExactly(responseA);
+            verify(purchaseReceiptRepository).search(null, null, null, 42L, pageable);
         }
 
         @Test
         void shouldReturnEmptyPageResponseWhenNoReceiptsMatch() {
             Page<PurchaseReceipt> emptyPage = new PageImpl<>(List.of(), pageable, 0);
-            when(purchaseReceiptRepository.search(SUPPLIER_ID, null, null, pageable)).thenReturn(emptyPage);
+            when(purchaseReceiptRepository.search(SUPPLIER_ID, null, null, null, pageable)).thenReturn(emptyPage);
 
             PageResponse<PurchaseReceiptResponse> result =
-                    purchaseReceiptService.listPurchaseReceipts(SUPPLIER_ID, null, null, pageable);
+                    purchaseReceiptService.listPurchaseReceipts(SUPPLIER_ID, null, null, null, pageable);
 
             assertThat(result).isNotNull();
             assertThat(result.getContent()).isEmpty();

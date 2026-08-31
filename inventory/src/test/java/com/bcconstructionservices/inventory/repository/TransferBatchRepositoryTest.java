@@ -202,6 +202,50 @@ class TransferBatchRepositoryTest {
     }
 
     // ---------------------------------------------------------------
+    // CHECK constraint: status (V23 widened this to allow AWAITING_PURCHASE)
+    // ---------------------------------------------------------------
+
+    @Nested
+    class StatusConstraint {
+
+        @Test
+        void shouldAcceptAwaitingPurchaseStatus() {
+            Warehouse origin = persistWarehouse("WH-MAIN", "Main Warehouse");
+            Warehouse destination = persistWarehouse("WH-SITE1", "Site Warehouse");
+
+            TransferBatch batch = buildBatch(origin, destination);
+            batch.setStatus(TransferBatchStatus.AWAITING_PURCHASE);
+
+            TransferBatch saved = transferBatchRepository.saveAndFlush(batch);
+            entityManager.clear();
+
+            TransferBatch reloaded = transferBatchRepository.findById(saved.getId()).orElseThrow();
+            assertThat(reloaded.getStatus()).isEqualTo(TransferBatchStatus.AWAITING_PURCHASE);
+        }
+
+        @Test
+        void shouldFilterSearchByAwaitingPurchaseStatus() {
+            Warehouse main = persistWarehouse("WH-MAIN", "Main Warehouse");
+            Warehouse site1 = persistWarehouse("WH-SITE1", "Site 1");
+
+            TransferBatch blocked = buildBatch(main, site1);
+            blocked.setStatus(TransferBatchStatus.AWAITING_PURCHASE);
+            transferBatchRepository.saveAndFlush(blocked);
+
+            TransferBatch draft = buildBatch(main, site1);
+            draft.setStatus(TransferBatchStatus.DRAFT);
+            transferBatchRepository.saveAndFlush(draft);
+            entityManager.clear();
+
+            List<TransferBatch> result = transferBatchRepository
+                    .search(null, null, TransferBatchStatus.AWAITING_PURCHASE, PageRequest.of(0, 10)).getContent();
+
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).getStatus()).isEqualTo(TransferBatchStatus.AWAITING_PURCHASE);
+        }
+    }
+
+    // ---------------------------------------------------------------
     // Line item cascade (owned by TransferBatch)
     // ---------------------------------------------------------------
 

@@ -46,6 +46,12 @@ public class PurchaseReceiptCreateRequest {
     @Schema(description = "Optional free-text notes about the purchase", example = "Partial shipment, remainder expected next week")
     private String notes;
 
+    @Schema(description = "Identifier of the TransferBatch this receipt is purchasing the shortfall for, if any. "
+            + "The referenced batch must currently be status AWAITING_PURCHASE (422 if not); confirming this "
+            + "receipt flips that batch back to DRAFT so it can be resubmitted. Omit or send null for a receipt "
+            + "with no such origin.", example = "42")
+    private Long fulfillsTransferBatchId;
+
     @NotEmpty(message = "A receipt must have at least one line")
     @Valid
     @Schema(description = "Line items purchased on this receipt; at least one is required")

@@ -18,6 +18,7 @@ import com.bcconstructionservices.inventory.exception.InactiveResourceException;
 import com.bcconstructionservices.inventory.exception.InsufficientStockException;
 import com.bcconstructionservices.inventory.exception.InvalidStockOperationException;
 import com.bcconstructionservices.inventory.exception.ResourceNotFoundException;
+import com.bcconstructionservices.inventory.exception.TransferBatchNotDeletableException;
 import com.bcconstructionservices.inventory.mapper.TransferBatchMapperImpl;
 import com.bcconstructionservices.inventory.mapper.TransferLineItemMapperImpl;
 import com.bcconstructionservices.inventory.repository.ItemRepository;
@@ -83,6 +84,8 @@ class TransferBatchServiceTest {
     private TransferBatchMapperImpl transferBatchMapper = new TransferBatchMapperImpl();
     @Mock
     private CurrentUserService currentUserService;
+    @Mock
+    private TransferBatchStatusUpdater transferBatchStatusUpdater;
 
     @InjectMocks
     private TransferBatchService transferBatchService;
@@ -362,6 +365,40 @@ class TransferBatchServiceTest {
         }
 
         @Test
+        void shouldMarkBatchAwaitingPurchaseWhenALineFailsWithInsufficientStock() {
+            TransferLineItem lineA = line(null, item, 50);
+            TransferBatch batch = buildDraftBatchWithLines(List.of(lineA));
+            lineA.setTransferBatch(batch);
+
+            when(transferBatchRepository.findByIdWithWarehouses(BATCH_ID)).thenReturn(Optional.of(batch));
+            when(transferLineItemRepository.findByTransferBatchId(BATCH_ID)).thenReturn(batch.getLineItems());
+            when(inventoryService.transferStock(any(StockTransferRequest.class)))
+                    .thenThrow(new InsufficientStockException(ITEM_ID, ORIGIN_WAREHOUSE_ID, 50, 10));
+
+            assertThatExceptionOfType(InsufficientStockException.class)
+                    .isThrownBy(() -> transferBatchService.submit(BATCH_ID));
+
+            // markAwaitingPurchase runs in its own REQUIRES_NEW transaction
+            // (see TransferBatchStatusUpdater) precisely because the ambient
+            // transaction here is already doomed — that's exercised for real
+            // by TransferBatchRepositoryTest, not this mock-based unit test.
+            verify(transferBatchStatusUpdater).markAwaitingPurchase(BATCH_ID);
+        }
+
+        @Test
+        void shouldNotMarkBatchAwaitingPurchaseWhenFailureIsNotInsufficientStock() {
+            TransferBatch batch = buildDraftBatchWithLines(List.of());
+
+            when(transferBatchRepository.findByIdWithWarehouses(BATCH_ID)).thenReturn(Optional.of(batch));
+            when(transferLineItemRepository.findByTransferBatchId(BATCH_ID)).thenReturn(List.of());
+
+            assertThatExceptionOfType(InvalidStockOperationException.class)
+                    .isThrownBy(() -> transferBatchService.submit(BATCH_ID));
+
+            verifyNoInteractions(transferBatchStatusUpdater);
+        }
+
+        @Test
         void shouldThrowInvalidStockOperationExceptionWhenBatchHasNoLineItems() {
             TransferBatch batch = buildDraftBatchWithLines(List.of());
 
@@ -464,6 +501,86 @@ class TransferBatchServiceTest {
 
             transferBatchService.submit(BATCH_ID);
 
+            verifyNoInteractions(materialRequestRepository, materialRequestLineItemRepository);
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // delete
+    // ---------------------------------------------------------------
+
+    @Nested
+    class DeleteTests {
+
+        @Test
+        void shouldDeleteBatchWhenStatusIsDraft() {
+            TransferBatch batch = buildDraftBatchWithLines(List.of());
+            when(transferBatchRepository.findById(BATCH_ID)).thenReturn(Optional.of(batch));
+
+            transferBatchService.delete(BATCH_ID);
+
+            verify(transferBatchRepository).delete(batch);
+        }
+
+        @Test
+        void shouldThrowResourceNotFoundExceptionWhenBatchDoesNotExist() {
+            when(transferBatchRepository.findById(BATCH_ID)).thenReturn(Optional.empty());
+
+            assertThatExceptionOfType(ResourceNotFoundException.class)
+                    .isThrownBy(() -> transferBatchService.delete(BATCH_ID));
+
+            verify(transferBatchRepository, never()).delete(any());
+        }
+
+        @Test
+        void shouldThrowTransferBatchNotDeletableExceptionWhenStatusIsSubmitted() {
+            TransferBatch batch = buildDraftBatchWithLines(List.of());
+            batch.setStatus(TransferBatchStatus.SUBMITTED);
+            when(transferBatchRepository.findById(BATCH_ID)).thenReturn(Optional.of(batch));
+
+            assertThatExceptionOfType(TransferBatchNotDeletableException.class)
+                    .isThrownBy(() -> transferBatchService.delete(BATCH_ID))
+                    .satisfies(ex -> {
+                        assertThat(ex.getTransferBatchId()).isEqualTo(BATCH_ID);
+                        assertThat(ex.getStatus()).isEqualTo(TransferBatchStatus.SUBMITTED);
+                    });
+
+            verify(transferBatchRepository, never()).delete(any());
+        }
+
+        @Test
+        void shouldThrowTransferBatchNotDeletableExceptionWhenStatusIsCompleted() {
+            TransferBatch batch = buildDraftBatchWithLines(List.of());
+            batch.setStatus(TransferBatchStatus.COMPLETED);
+            when(transferBatchRepository.findById(BATCH_ID)).thenReturn(Optional.of(batch));
+
+            assertThatExceptionOfType(TransferBatchNotDeletableException.class)
+                    .isThrownBy(() -> transferBatchService.delete(BATCH_ID));
+
+            verify(transferBatchRepository, never()).delete(any());
+        }
+
+        @Test
+        void shouldThrowTransferBatchNotDeletableExceptionWhenStatusIsAwaitingPurchase() {
+            TransferBatch batch = buildDraftBatchWithLines(List.of());
+            batch.setStatus(TransferBatchStatus.AWAITING_PURCHASE);
+            when(transferBatchRepository.findById(BATCH_ID)).thenReturn(Optional.of(batch));
+
+            assertThatExceptionOfType(TransferBatchNotDeletableException.class)
+                    .isThrownBy(() -> transferBatchService.delete(BATCH_ID));
+
+            verify(transferBatchRepository, never()).delete(any());
+        }
+
+        @Test
+        void shouldNotTouchMaterialRequestRepositoryWhenDeletingABatchWithASourceMaterialRequest() {
+            TransferBatch batch = buildDraftBatchWithLines(List.of());
+            batch.setSourceMaterialRequestId(14L);
+            when(transferBatchRepository.findById(BATCH_ID)).thenReturn(Optional.of(batch));
+
+            transferBatchService.delete(BATCH_ID);
+
+            verify(transferBatchRepository).delete(batch);
             verifyNoInteractions(materialRequestRepository, materialRequestLineItemRepository);
         }
     }

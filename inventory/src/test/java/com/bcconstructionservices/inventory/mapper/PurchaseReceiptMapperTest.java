@@ -67,6 +67,7 @@ class PurchaseReceiptMapperTest {
         receipt.setTotalAmount(new BigDecimal("13712.50"));
         receipt.setImageUrl("https://cdn.example.com/receipts/or-2026-004512.jpg");
         receipt.setNotes("Bulk order for Phase 2 foundation work");
+        receipt.setFulfillsTransferBatchId(42L);
         receipt.setCreatedAt(Instant.parse("2026-07-10T05:25:00Z"));
         receipt.setLines(new ArrayList<>());
         return receipt;
@@ -108,6 +109,7 @@ class PurchaseReceiptMapperTest {
             assertThat(response.getImageUrl())
                     .isEqualTo("https://cdn.example.com/receipts/or-2026-004512.jpg");
             assertThat(response.getNotes()).isEqualTo("Bulk order for Phase 2 foundation work");
+            assertThat(response.getFulfillsTransferBatchId()).isEqualTo(42L);
             assertThat(response.getCreatedAt()).isEqualTo(Instant.parse("2026-07-10T05:25:00Z"));
         }
 
@@ -186,6 +188,7 @@ class PurchaseReceiptMapperTest {
             request.setPurchaseDate(LocalDate.of(2026, 7, 15));
             request.setImageUrl("https://cdn.example.com/receipts/or-2026-004513.jpg");
             request.setNotes("Restock after Phase 2 pour");
+            request.setFulfillsTransferBatchId(42L);
             request.setLines(List.of(lineRequest));
 
             PurchaseReceipt entity = mapper.toEntity(request);
@@ -196,6 +199,7 @@ class PurchaseReceiptMapperTest {
             assertThat(entity.getImageUrl())
                     .isEqualTo("https://cdn.example.com/receipts/or-2026-004513.jpg");
             assertThat(entity.getNotes()).isEqualTo("Restock after Phase 2 pour");
+            assertThat(entity.getFulfillsTransferBatchId()).isEqualTo(42L);
         }
 
         @Test

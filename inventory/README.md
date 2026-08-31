@@ -25,6 +25,13 @@ current user for `createdBy`/`confirmedBy` fields).
 project-site warehouse that only receives stock via transfer batches — material requests can
 only be created against a `SITE` warehouse, and transfer batches move stock from `MAIN` to `SITE`.
 
+`TransferBatch` blocked on insufficient stock is trackable, not silent: a `submit` that fails
+specifically on `InsufficientStockException` sets the batch's status to `AWAITING_PURCHASE`
+instead of leaving it looking like an untouched draft. `PurchaseReceipt.fulfillsTransferBatchId`
+cross-references the blocked batch a purchase is resolving (must reference a batch that's
+actually `AWAITING_PURCHASE`); confirming that receipt flips the batch back to `DRAFT` so it can
+be resubmitted — see "Blocked transfer batches" below.
+
 ## API endpoints
 
 All endpoints return `application/json` and validate request bodies with `@Valid`.
@@ -69,10 +76,10 @@ All endpoints return `application/json` and validate request bodies with `@Valid
 - `GET /api/suppliers/for-item/{itemId}` — list suppliers for an item
 
 ### Purchase receipts — `/api/purchase-receipts`
-- `POST /api/purchase-receipts` — create a draft receipt with line items
-- `POST /api/purchase-receipts/{receiptId}/confirm` — confirm a draft receipt, posting `IN` stock movements for each line
+- `POST /api/purchase-receipts` — create a draft receipt with line items; optionally set `fulfillsTransferBatchId` to link it to a blocked transfer batch (422 if that batch isn't `AWAITING_PURCHASE`)
+- `POST /api/purchase-receipts/{receiptId}/confirm` — confirm a draft receipt, posting `IN` stock movements for each line, and flipping any linked `AWAITING_PURCHASE` transfer batch back to `DRAFT`
 - `GET /api/purchase-receipts/{receiptId}` — get by id
-- `GET /api/purchase-receipts` — paginated list
+- `GET /api/purchase-receipts` — paginated list, filterable by `supplierId`/date range/`fulfillsTransferBatchId`
 - `GET /api/purchase-receipts/item/{itemId}/history` — purchase history for an item
 - `POST /api/purchase-receipts/{receiptId}/image` (multipart) — upload a receipt image
 
@@ -88,9 +95,33 @@ request's status.
 
 ### Transfer batches — `/api/inventory/transfer-batches`
 - `POST /api/inventory/transfer-batches` — create a draft batch (optionally against a `MaterialRequest` via `sourceMaterialRequestId`)
-- `POST /api/inventory/transfer-batches/{id}/submit` — submit a draft batch, moving stock from the `MAIN` warehouse to the `SITE` warehouse for each line and updating the source request's status, if any
+- `POST /api/inventory/transfer-batches/{id}/submit` — submit a draft batch, moving stock from the `MAIN` warehouse to the `SITE` warehouse for each line and updating the source request's status, if any. On 409 (insufficient stock), the batch's status is set to `AWAITING_PURCHASE` instead of being left as an untouched draft
+- `DELETE /api/inventory/transfer-batches/{id}` — delete a `DRAFT` batch (422 for any other status). Never touches a `sourceMaterialRequestId`'s `MaterialRequest` — the request is just left with no draft transfer against it
 - `GET /api/inventory/transfer-batches/{id}` — get by id
 - `GET /api/inventory/transfer-batches` — paginated list
+
+## Blocked transfer batches (linking Material Requests to Purchasing)
+
+When `POST /{id}/submit` fails specifically on insufficient stock, the batch is marked
+`AWAITING_PURCHASE` rather than silently reverting to `DRAFT` — the only durable trace of a
+failed attempt. To resolve it:
+
+1. Create a `PurchaseReceipt` for the shortfall item(s) with `fulfillsTransferBatchId` set to the
+   blocked batch's id (422 if that batch isn't currently `AWAITING_PURCHASE`).
+2. Confirm that receipt (`POST /{receiptId}/confirm`) — this automatically flips the batch back
+   to `DRAFT`.
+3. Resubmit the batch (`POST /{id}/submit`) — this step is manual, not automatic.
+
+To find "the receipt resolving batch #Y" from the batch side, query
+`GET /api/purchase-receipts?fulfillsTransferBatchId=Y` — `TransferBatchResponse` doesn't embed
+the reverse reference itself.
+
+`TransferBatchStatusUpdater` persists `AWAITING_PURCHASE` in its own `REQUIRES_NEW` transaction,
+independent of the failed `submit()` call — by the time `submit()` catches
+`InsufficientStockException`, `InventoryService.transferStock`'s own transactional advice has
+already marked the ambient transaction rollback-only, so a plain write at that point would just
+be discarded. Every stock transfer already applied earlier in that submit's loop is still rolled
+back as before; only the `AWAITING_PURCHASE` marker survives.
 
 ## Stock adjustments vs. transfers
 
@@ -129,6 +160,8 @@ app:
 | `InactiveResourceException` | 400 |
 | `ReceiptProcessingException` | 422 |
 | `MaterialRequestNotEditableException` | 422 |
+| `TransferBatchNotAwaitingPurchaseException` | 422 |
+| `TransferBatchNotDeletableException` | 422 |
 | Bean validation failures | 400 (field-level `ValidationErrorResponse`) |
 | Malformed JSON | 400 |
 | `IllegalStateException` | 401 |
@@ -139,13 +172,14 @@ app:
 
 ## Database migrations
 
-Flyway migrations live in `src/main/resources/db/migration`, `V2` through `V20` (module-local —
+Flyway migrations live in `src/main/resources/db/migration`, `V2` through `V23` (module-local —
 the full version sequence is shared and global across all modules, so this module doesn't own
 every number), covering items, item images, suppliers, item-supplier links, warehouses, storage
 locations, inventory stock, stock movements, purchase receipts and lines, a `type` column added
-to `warehouse` (`MAIN`/`SITE`), and the transfer batch / material request tables. Dev-only demo
-data seeds live separately under `app/src/main/resources/db/dev-data` and are only loaded when
-the `dev` Spring profile's `flyway.locations` override is active — never in prod.
+to `warehouse` (`MAIN`/`SITE`), the transfer batch / material request tables, and (`V23`) the
+`AWAITING_PURCHASE` transfer batch status plus `purchase_receipt.fulfills_transfer_batch_id`.
+Dev-only demo data seeds live separately under `app/src/main/resources/db/dev-data` and are only
+loaded when the `dev` Spring profile's `flyway.locations` override is active — never in prod.
 
 ## Testing
 
