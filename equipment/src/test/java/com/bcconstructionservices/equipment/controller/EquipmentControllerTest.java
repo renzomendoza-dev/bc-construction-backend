@@ -7,6 +7,7 @@ import com.bcconstructionservices.equipment.dto.EquipmentResponse;
 import com.bcconstructionservices.equipment.dto.EquipmentUpdateRequest;
 import com.bcconstructionservices.equipment.entity.Equipment;
 import com.bcconstructionservices.equipment.entity.EquipmentStatus;
+import com.bcconstructionservices.equipment.exception.EquipmentAlreadyAtWarehouseException;
 import com.bcconstructionservices.equipment.exception.EquipmentNotFoundException;
 import com.bcconstructionservices.equipment.exception.InvalidCheckoutUserException;
 import com.bcconstructionservices.equipment.exception.InvalidEquipmentStatusException;
@@ -138,6 +139,7 @@ class EquipmentControllerTest {
         EquipmentCreateRequest request = EquipmentCreateRequest.builder()
                 .assetTag("EQ-2026-0001")
                 .name("DeWalt 20V Cordless Drill")
+                .warehouseId(1L)
                 .build();
 
         Equipment createdEntity = sampleAvailableEquipment();
@@ -173,6 +175,7 @@ class EquipmentControllerTest {
         EquipmentCreateRequest request = EquipmentCreateRequest.builder()
                 .assetTag("EQ-2026-0001")
                 .name("DeWalt 20V Cordless Drill")
+                .warehouseId(1L)
                 .build();
 
         mockMvc.perform(post("/api/equipment")
@@ -280,7 +283,7 @@ class EquipmentControllerTest {
     void checkOut_succeeds_returns200() throws Exception {
         EquipmentCheckOutRequest request = EquipmentCheckOutRequest.builder()
                 .userId(17L)
-                .site("Site C")
+                .siteWarehouseId(2L)
                 .build();
 
         Equipment checkedOutEntity = Equipment.builder()
@@ -288,13 +291,13 @@ class EquipmentControllerTest {
                 .assetTag("EQ-2026-0001")
                 .status(EquipmentStatus.CHECKED_OUT)
                 .currentHolderId(17L)
-                .currentSite("Site C")
+                .currentWarehouseId(2L)
                 .checkedOutAt(Instant.now())
                 .build();
 
         EquipmentResponse response = sampleResponse(1L, EquipmentStatus.CHECKED_OUT);
 
-        when(equipmentService.checkOut(eq(1L), eq(17L), eq("Site C"), any()))
+        when(equipmentService.checkOut(eq(1L), eq(17L), eq(2L), any()))
                 .thenReturn(checkedOutEntity);
         when(equipmentMapper.toResponse(checkedOutEntity)).thenReturn(response);
 
@@ -307,13 +310,60 @@ class EquipmentControllerTest {
     }
 
     @Test
+    void checkOut_transfersEquipment_returns200() throws Exception {
+        EquipmentCheckOutRequest request = EquipmentCheckOutRequest.builder()
+                .userId(21L)
+                .siteWarehouseId(3L)
+                .build();
+
+        Equipment transferredEntity = Equipment.builder()
+                .id(1L)
+                .assetTag("EQ-2026-0001")
+                .status(EquipmentStatus.CHECKED_OUT)
+                .currentHolderId(21L)
+                .currentWarehouseId(3L)
+                .checkedOutAt(Instant.now())
+                .build();
+
+        EquipmentResponse response = sampleResponse(1L, EquipmentStatus.CHECKED_OUT);
+
+        when(equipmentService.checkOut(eq(1L), eq(21L), eq(3L), any()))
+                .thenReturn(transferredEntity);
+        when(equipmentMapper.toResponse(transferredEntity)).thenReturn(response);
+
+        mockMvc.perform(post("/api/equipment/{id}/checkout", 1L)
+                        .with(authenticatedJwt("EQUIPMENT_CHECKOUT"))
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CHECKED_OUT"));
+    }
+
+    @Test
+    void checkOut_returns400_whenTransferTargetsCurrentWarehouse() throws Exception {
+        EquipmentCheckOutRequest request = EquipmentCheckOutRequest.builder()
+                .userId(21L)
+                .siteWarehouseId(2L)
+                .build();
+
+        when(equipmentService.checkOut(eq(1L), eq(21L), eq(2L), any()))
+                .thenThrow(new EquipmentAlreadyAtWarehouseException(1L, 2L));
+
+        mockMvc.perform(post("/api/equipment/{id}/checkout", 1L)
+                        .with(authenticatedJwt("EQUIPMENT_CHECKOUT"))
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void checkOut_returns409_whenEquipmentNotAvailable() throws Exception {
         EquipmentCheckOutRequest request = EquipmentCheckOutRequest.builder()
                 .userId(17L)
-                .site("Site C")
+                .siteWarehouseId(2L)
                 .build();
 
-        when(equipmentService.checkOut(eq(1L), anyLong(), anyString(), any()))
+        when(equipmentService.checkOut(eq(1L), anyLong(), any(), any()))
                 .thenThrow(new InvalidEquipmentStatusException(
                         "Equipment EQ-2026-0001 is not available for checkout (current status: CHECKED_OUT)"));
 
@@ -328,10 +378,10 @@ class EquipmentControllerTest {
     void checkOut_returns404_whenUserDoesNotExist() throws Exception {
         EquipmentCheckOutRequest request = EquipmentCheckOutRequest.builder()
                 .userId(999L)
-                .site("Site C")
+                .siteWarehouseId(2L)
                 .build();
 
-        when(equipmentService.checkOut(eq(1L), eq(999L), anyString(), any()))
+        when(equipmentService.checkOut(eq(1L), eq(999L), any(), any()))
                 .thenThrow(new InvalidCheckoutUserException(999L));
 
         mockMvc.perform(post("/api/equipment/{id}/checkout", 1L)
@@ -345,7 +395,7 @@ class EquipmentControllerTest {
     void checkOut_withoutEquipmentCheckoutPermission_returns403() throws Exception {
         EquipmentCheckOutRequest request = EquipmentCheckOutRequest.builder()
                 .userId(17L)
-                .site("Site C")
+                .siteWarehouseId(2L)
                 .build();
 
         mockMvc.perform(post("/api/equipment/{id}/checkout", 1L)
@@ -362,13 +412,14 @@ class EquipmentControllerTest {
     @Test
     void checkIn_succeeds_returns200() throws Exception {
         EquipmentCheckInRequest request = EquipmentCheckInRequest.builder()
+                .destinationWarehouseId(1L)
                 .conditionIn("Returned in working order")
                 .build();
 
         Equipment checkedInEntity = sampleAvailableEquipment();
         EquipmentResponse response = sampleResponse(1L, EquipmentStatus.AVAILABLE);
 
-        when(equipmentService.checkIn(eq(1L), any())).thenReturn(checkedInEntity);
+        when(equipmentService.checkIn(eq(1L), eq(1L), any())).thenReturn(checkedInEntity);
         when(equipmentMapper.toResponse(checkedInEntity)).thenReturn(response);
 
         mockMvc.perform(post("/api/equipment/{id}/checkin", 1L)
@@ -382,10 +433,11 @@ class EquipmentControllerTest {
     @Test
     void checkIn_returns409_whenNoOpenAssignment() throws Exception {
         EquipmentCheckInRequest request = EquipmentCheckInRequest.builder()
+                .destinationWarehouseId(1L)
                 .conditionIn("Returned in working order")
                 .build();
 
-        when(equipmentService.checkIn(eq(1L), any()))
+        when(equipmentService.checkIn(eq(1L), eq(1L), any()))
                 .thenThrow(new NoOpenAssignmentException(1L));
 
         mockMvc.perform(post("/api/equipment/{id}/checkin", 1L)
@@ -398,6 +450,7 @@ class EquipmentControllerTest {
     @Test
     void checkIn_withoutEquipmentCheckinPermission_returns403() throws Exception {
         EquipmentCheckInRequest request = EquipmentCheckInRequest.builder()
+                .destinationWarehouseId(1L)
                 .conditionIn("Returned in working order")
                 .build();
 

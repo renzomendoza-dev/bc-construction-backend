@@ -5,6 +5,7 @@ import com.bcconstructionservices.equipment.dto.EquipmentResponse;
 import com.bcconstructionservices.equipment.dto.EquipmentUpdateRequest;
 import com.bcconstructionservices.equipment.entity.Equipment;
 import com.bcconstructionservices.equipment.entity.EquipmentStatus;
+import com.bcconstructionservices.inventory.service.WarehouseLookupHelper;
 import com.bcconstructionservices.user.service.UserLookupHelper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -54,12 +55,15 @@ class EquipmentMapperTest {
 
     private EquipmentMapper equipmentMapper;
     private UserLookupHelper userLookupHelper;
+    private WarehouseLookupHelper warehouseLookupHelper;
 
     @BeforeEach
     void setUp() {
         equipmentMapper = Mockito.spy(new EquipmentMapperImpl());
         userLookupHelper = Mockito.mock(UserLookupHelper.class);
+        warehouseLookupHelper = Mockito.mock(WarehouseLookupHelper.class);
         ReflectionTestUtils.setField(equipmentMapper, "userLookupHelper", userLookupHelper);
+        ReflectionTestUtils.setField(equipmentMapper, "warehouseLookupHelper", warehouseLookupHelper);
     }
 
     @Test
@@ -69,7 +73,7 @@ class EquipmentMapperTest {
                 .name("Excavator")
                 .status(EquipmentStatus.CHECKED_OUT)
                 .currentHolderId(5L)
-                .currentSite("Site A")
+                .currentWarehouseId(2L)
                 .build();
 
         when(userLookupHelper.resolveUserName(eq(5L))).thenReturn("Juan Dela Cruz");
@@ -122,11 +126,13 @@ class EquipmentMapperTest {
         assertThat(entity.getPurchaseVendor()).isEqualTo("ACME Equipment Co.");
 
         // System-controlled fields must not be populated by this mapping —
-        // status defaults at the DB level, holder/site/checkedOutAt are set
-        // only via check-out/check-in operations.
+        // status defaults at the DB level, holder/checkedOutAt are set only
+        // via check-out/check-in operations, and currentWarehouseId is set
+        // by the service after validating request.warehouseId (see the
+        // mapper's javadoc), not copied here.
         assertThat(entity.getStatus()).isEqualTo(EquipmentStatus.AVAILABLE);
         assertThat(entity.getCurrentHolderId()).isNull();
-        assertThat(entity.getCurrentSite()).isNull();
+        assertThat(entity.getCurrentWarehouseId()).isNull();
         assertThat(entity.getCheckedOutAt()).isNull();
     }
 
@@ -142,7 +148,7 @@ class EquipmentMapperTest {
                 .purchaseVendor("Old Vendor")
                 .status(EquipmentStatus.CHECKED_OUT)
                 .currentHolderId(9L)
-                .currentSite("Site B")
+                .currentWarehouseId(2L)
                 .build();
 
         EquipmentUpdateRequest request = new EquipmentUpdateRequest();
@@ -162,10 +168,10 @@ class EquipmentMapperTest {
         assertThat(existing.getPurchaseDate()).isEqualTo(LocalDate.of(2023, 6, 1));
         assertThat(existing.getPurchaseVendor()).isEqualTo("New Vendor");
 
-        // Status/holder/site/checkedOutAt are not part of this DTO and must
-        // remain exactly as they were before the update was applied.
+        // Status/holder/warehouse/checkedOutAt are not part of this DTO and
+        // must remain exactly as they were before the update was applied.
         assertThat(existing.getStatus()).isEqualTo(EquipmentStatus.CHECKED_OUT);
         assertThat(existing.getCurrentHolderId()).isEqualTo(9L);
-        assertThat(existing.getCurrentSite()).isEqualTo("Site B");
+        assertThat(existing.getCurrentWarehouseId()).isEqualTo(2L);
     }
 }

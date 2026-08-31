@@ -32,8 +32,18 @@ public class EquipmentAssignmentResponse {
     @Schema(description = "Resolved display name of the assignee", example = "Maria Santos")
     private String assignedToName;
 
-    @Schema(example = "Site B - Riverside")
-    private String site;
+    @Schema(description = "Identifier of the warehouse this equipment was checked out to", example = "2")
+    private Long warehouseId;
+
+    @Schema(description = "Resolved display name of that warehouse", example = "Site B - Riverside")
+    private String warehouseName;
+
+    @Schema(description = "Identifier of the warehouse this equipment was checked back in to, if it has been",
+            example = "1")
+    private Long returnWarehouseId;
+
+    @Schema(description = "Resolved display name of the return warehouse", example = "Main Warehouse")
+    private String returnWarehouseName;
 
     private Instant checkedOutAt;
     private Instant checkedInAt;

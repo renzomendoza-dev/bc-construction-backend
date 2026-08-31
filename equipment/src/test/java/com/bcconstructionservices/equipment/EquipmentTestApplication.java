@@ -17,7 +17,13 @@ import static org.springframework.security.config.Customizer.withDefaults;
 @SpringBootApplication(scanBasePackages = "com.bcconstructionservices.equipment")
 @EntityScan(basePackages = {
         "com.bcconstructionservices.equipment.entity",
-        "com.bcconstructionservices.user.entity"
+        "com.bcconstructionservices.user.entity",
+        // Warehouse (inventory module) is persisted directly by
+        // repository-slice tests exercising the new current_warehouse_id/
+        // warehouse_id FKs (see V24) - equipment.entity itself only ever
+        // holds a plain Long id for it, never a @ManyToOne, so this scan
+        // entry exists purely for the tests, not equipment's own mappings.
+        "com.bcconstructionservices.inventory.entity"
 })
 public class EquipmentTestApplication {
 

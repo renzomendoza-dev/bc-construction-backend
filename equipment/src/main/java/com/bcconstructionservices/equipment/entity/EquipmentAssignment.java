@@ -33,8 +33,23 @@ public class EquipmentAssignment {
     @Column(name = "assigned_to_id", nullable = false)
     private Long assignedToId;
 
-    @Column(name = "site", length = 150)
-    private String site;
+    /**
+     * Warehouse (plain id, cross-module — see Equipment.currentWarehouseId's
+     * javadoc) this assignment sent the equipment to at checkout. Set once,
+     * at checkout, and never changed afterward.
+     */
+    @Column(name = "warehouse_id")
+    private Long warehouseId;
+
+    /**
+     * Warehouse this assignment's equipment was actually checked back in to.
+     * Null until check-in; recorded here (not just on Equipment.currentWarehouseId)
+     * so the return destination survives even after a later checkout overwrites
+     * Equipment's current state — otherwise this assignment's own history would
+     * be lost.
+     */
+    @Column(name = "return_warehouse_id")
+    private Long returnWarehouseId;
 
     @Column(name = "checked_out_at", nullable = false)
     private Instant checkedOutAt;

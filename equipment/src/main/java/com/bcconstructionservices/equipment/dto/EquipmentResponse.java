@@ -44,8 +44,12 @@ public class EquipmentResponse {
     @Schema(description = "Resolved display name of the current holder, if checked out", example = "Maria Santos")
     private String currentHolderName;
 
-    @Schema(example = "Site B - Riverside")
-    private String currentSite;
+    @Schema(description = "Identifier of the warehouse this equipment currently sits at — a SITE warehouse "
+            + "while checked out, a MAIN warehouse once returned", example = "2")
+    private Long currentWarehouseId;
+
+    @Schema(description = "Resolved display name of the current warehouse", example = "Site B - Riverside")
+    private String currentWarehouseName;
 
     private Instant checkedOutAt;
 

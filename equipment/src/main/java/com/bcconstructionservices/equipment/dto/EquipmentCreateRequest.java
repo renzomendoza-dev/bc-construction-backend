@@ -3,6 +3,7 @@ package com.bcconstructionservices.equipment.dto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.PastOrPresent;
 import jakarta.validation.constraints.Size;
@@ -41,6 +42,12 @@ public class EquipmentCreateRequest {
     @Size(max = 100)
     @Schema(description = "Manufacturer serial number", example = "SN-88213A", maxLength = 100)
     private String serialNumber;
+
+    @NotNull
+    @Schema(description = "Identifier of the MAIN-type warehouse this equipment is currently stored at (400 if "
+            + "it isn't a MAIN warehouse) — equipment.currentWarehouseId is always populated, so this is required "
+            + "even for newly-registered equipment that's never been checked out", example = "1")
+    private Long warehouseId;
 
     @DecimalMin(value = "0.0", inclusive = true, message = "purchasePrice cannot be negative")
     @Schema(description = "Purchase price", example = "249.99")

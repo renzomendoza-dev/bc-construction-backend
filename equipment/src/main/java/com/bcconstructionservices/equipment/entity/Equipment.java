@@ -50,8 +50,20 @@ public class Equipment {
     @Column(name = "current_holder_id")
     private Long currentHolderId;
 
-    @Column(name = "current_site", length = 150)
-    private String currentSite;
+    /**
+     * References Warehouse (inventory module) by plain id, not a JPA
+     * association — Warehouse lives in a different module. Real DB-level
+     * FK regardless (see V24), since equipment already does this same
+     * cross-module-FK-without-a-Java-relationship thing for current_holder_id
+     * -> app_user. SITE-typed while checked out, MAIN once returned; always
+     * populated for equipment created after V24, but nullable to
+     * accommodate rows that existed before this column did (their old
+     * free-text current_site couldn't be reliably mapped to a real
+     * Warehouse row) — those self-heal to non-null on their next
+     * checkout/checkin cycle, which now requires and sets this field.
+     */
+    @Column(name = "current_warehouse_id")
+    private Long currentWarehouseId;
 
     @Column(name = "checked_out_at")
     private Instant checkedOutAt;

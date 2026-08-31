@@ -58,6 +58,36 @@ public class EquipmentExceptionHandler {
         return buildResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(WarehouseNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleWarehouseNotFound(
+            WarehouseNotFoundException ex, HttpServletRequest request) {
+        return buildResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(EquipmentAssignmentBatchNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleEquipmentAssignmentBatchNotFound(
+            EquipmentAssignmentBatchNotFoundException ex, HttpServletRequest request) {
+        return buildResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(InvalidWarehouseTypeException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidWarehouseType(
+            InvalidWarehouseTypeException ex, HttpServletRequest request) {
+        return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(InvalidEquipmentBatchRequestException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidEquipmentBatchRequest(
+            InvalidEquipmentBatchRequestException ex, HttpServletRequest request) {
+        return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(EquipmentAlreadyAtWarehouseException.class)
+    public ResponseEntity<ErrorResponse> handleEquipmentAlreadyAtWarehouse(
+            EquipmentAlreadyAtWarehouseException ex, HttpServletRequest request) {
+        return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
     /**
      * Thrown by {@code @PreAuthorize} when an authenticated caller lacks the
      * required permission. Handled explicitly here — otherwise it would be

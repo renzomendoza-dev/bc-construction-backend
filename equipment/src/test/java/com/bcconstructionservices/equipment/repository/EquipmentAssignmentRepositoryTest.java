@@ -4,6 +4,8 @@ import com.bcconstructionservices.equipment.JpaAuditingTestConfig;
 import com.bcconstructionservices.equipment.entity.Equipment;
 import com.bcconstructionservices.equipment.entity.EquipmentAssignment;
 import com.bcconstructionservices.equipment.entity.EquipmentStatus;
+import com.bcconstructionservices.inventory.entity.Warehouse;
+import com.bcconstructionservices.inventory.entity.WarehouseType;
 import com.bcconstructionservices.user.entity.AppUser;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -37,7 +39,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * ASSUMPTIONS — verify against the real classes and correct if they differ:
  * - EquipmentAssignment has a @ManyToOne Equipment `equipment` field (backing the
- *   equipment_id FK in V15), plus assignedToId (Long), site (String),
+ *   equipment_id FK in V15), plus assignedToId (Long), warehouseId/returnWarehouseId
+ *   (Long, FK to Warehouse — added by V24, replacing the original free-text site),
  *   checkedOutAt / checkedInAt (Instant), conditionOut / conditionIn
  *   (String), createdBy (Long), createdAt (DB-defaulted, not set here), and a
  *   Lombok @Builder like Equipment uses.
@@ -64,6 +67,7 @@ class EquipmentAssignmentRepositoryTest {
     private Equipment bulldozer;
     private AppUser worker;
     private AppUser otherWorker;
+    private Warehouse siteWarehouse;
 
     @BeforeEach
     void setUp() {
@@ -80,6 +84,17 @@ class EquipmentAssignmentRepositoryTest {
                 .fullName("Other Field Worker")
                 .build();
         entityManager.persistAndFlush(otherWorker);
+
+        // warehouse_id is now FK-constrained to warehouse (inventory module,
+        // pulled onto this module's test classpath/schema by equipment's new
+        // dependency on inventory) — same reasoning as assigned_to_id above.
+        siteWarehouse = Warehouse.builder()
+                .code("WH-SITE1")
+                .name("Site A")
+                .type(WarehouseType.SITE)
+                .active(true)
+                .build();
+        entityManager.persistAndFlush(siteWarehouse);
 
         excavator = Equipment.builder()
                 .assetTag("EQ-101")
@@ -101,7 +116,7 @@ class EquipmentAssignmentRepositoryTest {
         EquipmentAssignment openAssignment = EquipmentAssignment.builder()
                 .equipment(excavator)
                 .assignedToId(worker.getId())
-                .site("Site A")
+                .warehouseId(siteWarehouse.getId())
                 .checkedOutAt(Instant.now().minus(2, ChronoUnit.DAYS))
                 .build();
         entityManager.persistAndFlush(openAssignment);
@@ -120,7 +135,7 @@ class EquipmentAssignmentRepositoryTest {
         EquipmentAssignment closedAssignment = EquipmentAssignment.builder()
                 .equipment(excavator)
                 .assignedToId(worker.getId())
-                .site("Site A")
+                .warehouseId(siteWarehouse.getId())
                 .checkedOutAt(Instant.now().minus(5, ChronoUnit.DAYS))
                 .checkedInAt(Instant.now().minus(1, ChronoUnit.DAYS))
                 .build();
@@ -147,7 +162,7 @@ class EquipmentAssignmentRepositoryTest {
         EquipmentAssignment openOnExcavator = EquipmentAssignment.builder()
                 .equipment(excavator)
                 .assignedToId(userId)
-                .site("Site A")
+                .warehouseId(siteWarehouse.getId())
                 .checkedOutAt(Instant.now().minus(3, ChronoUnit.DAYS))
                 .build();
         entityManager.persistAndFlush(openOnExcavator);
@@ -155,7 +170,7 @@ class EquipmentAssignmentRepositoryTest {
         EquipmentAssignment openOnBulldozer = EquipmentAssignment.builder()
                 .equipment(bulldozer)
                 .assignedToId(userId)
-                .site("Site B")
+                .warehouseId(siteWarehouse.getId())
                 .checkedOutAt(Instant.now().minus(1, ChronoUnit.DAYS))
                 .build();
         entityManager.persistAndFlush(openOnBulldozer);
@@ -171,7 +186,7 @@ class EquipmentAssignmentRepositoryTest {
         EquipmentAssignment closedForSameUser = EquipmentAssignment.builder()
                 .equipment(crane)
                 .assignedToId(userId)
-                .site("Site C")
+                .warehouseId(siteWarehouse.getId())
                 .checkedOutAt(Instant.now().minus(10, ChronoUnit.DAYS))
                 .checkedInAt(Instant.now().minus(9, ChronoUnit.DAYS))
                 .build();
@@ -181,7 +196,7 @@ class EquipmentAssignmentRepositoryTest {
         EquipmentAssignment openForOtherUser = EquipmentAssignment.builder()
                 .equipment(crane)
                 .assignedToId(otherWorker.getId())
-                .site("Site D")
+                .warehouseId(siteWarehouse.getId())
                 .checkedOutAt(Instant.now().minus(4, ChronoUnit.HOURS))
                 .build();
         entityManager.persistAndFlush(openForOtherUser);
@@ -204,7 +219,7 @@ class EquipmentAssignmentRepositoryTest {
         EquipmentAssignment assignment = EquipmentAssignment.builder()
                 .equipment(excavator)
                 .assignedToId(worker.getId())
-                .site("Site E")
+                .warehouseId(siteWarehouse.getId())
                 .checkedOutAt(checkedOut)
                 .checkedInAt(checkedIn)
                 .build();
