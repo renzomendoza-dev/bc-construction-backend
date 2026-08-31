@@ -1,5 +1,6 @@
 package com.bcconstructionservices.inventory.dto;
 
+import com.bcconstructionservices.inventory.entity.WarehouseType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -30,6 +31,9 @@ public class WarehouseResponse {
 
     @Schema(description = "Whether the warehouse is currently active", example = "true")
     private boolean active;
+
+    @Schema(description = "Type of warehouse", example = "MAIN", allowableValues = {"MAIN", "SITE"})
+    private WarehouseType type;
 
     @Schema(description = "Timestamp when the warehouse was created", example = "2026-07-18T09:15:30Z")
     private Instant createdAt;

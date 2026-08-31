@@ -20,19 +20,26 @@ public interface WarehouseMapper {
 
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "active", ignore = true) // left at the entity's own field default (true)
+    // WarehouseCreateRequest.type is optional; defaultValue substitutes MAIN
+    // when omitted rather than mapping an explicit null over the entity's
+    // own @Builder.Default (which only applies when the property is never set).
+    @Mapping(target = "type", defaultValue = "MAIN")
     @Mapping(target = "createdAt", ignore = true) // set by @PrePersist
     @Mapping(target = "updatedAt", ignore = true) // set by @PrePersist
     Warehouse toEntity(WarehouseCreateRequest request);
 
     /**
      * Applies only the non-null fields present in request onto the existing
-     * warehouse. WarehouseUpdateRequest has no `code` field by design —
-     * warehouse code is immutable once created — so code is explicitly
-     * ignored here rather than left to an implicit "no matching source" skip.
+     * warehouse. WarehouseUpdateRequest has no `code` or `type` field by
+     * design — warehouse code is immutable once created, and a site
+     * shouldn't silently become a warehouse (or vice versa) — so both are
+     * explicitly ignored here rather than left to an implicit "no matching
+     * source" skip.
      */
     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "code", ignore = true)
+    @Mapping(target = "type", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
     void updateEntityFromRequest(WarehouseUpdateRequest request, @MappingTarget Warehouse warehouse);

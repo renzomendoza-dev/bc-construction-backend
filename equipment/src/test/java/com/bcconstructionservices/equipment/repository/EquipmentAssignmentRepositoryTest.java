@@ -4,6 +4,7 @@ import com.bcconstructionservices.equipment.JpaAuditingTestConfig;
 import com.bcconstructionservices.equipment.entity.Equipment;
 import com.bcconstructionservices.equipment.entity.EquipmentAssignment;
 import com.bcconstructionservices.equipment.entity.EquipmentStatus;
+import com.bcconstructionservices.user.entity.AppUser;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,9 +13,11 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
 import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
 import org.springframework.context.annotation.Import;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -35,7 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * ASSUMPTIONS — verify against the real classes and correct if they differ:
  * - EquipmentAssignment has a @ManyToOne Equipment `equipment` field (backing the
  *   equipment_id FK in V15), plus assignedToId (Long), site (String),
- *   checkedOutAt / checkedInAt (LocalDateTime), conditionOut / conditionIn
+ *   checkedOutAt / checkedInAt (Instant), conditionOut / conditionIn
  *   (String), createdBy (Long), createdAt (DB-defaulted, not set here), and a
  *   Lombok @Builder like Equipment uses.
  * - EquipmentAssignmentRepository extends JpaRepository<EquipmentAssignment, Long>
@@ -59,9 +62,25 @@ class EquipmentAssignmentRepositoryTest {
 
     private Equipment excavator;
     private Equipment bulldozer;
+    private AppUser worker;
+    private AppUser otherWorker;
 
     @BeforeEach
     void setUp() {
+        // assigned_to_id is now FK-constrained to app_user, so real rows must
+        // exist before any assignment references them.
+        worker = AppUser.builder()
+                .keycloakId(UUID.randomUUID())
+                .fullName("Field Worker")
+                .build();
+        entityManager.persistAndFlush(worker);
+
+        otherWorker = AppUser.builder()
+                .keycloakId(UUID.randomUUID())
+                .fullName("Other Field Worker")
+                .build();
+        entityManager.persistAndFlush(otherWorker);
+
         excavator = Equipment.builder()
                 .assetTag("EQ-101")
                 .name("Excavator")
@@ -81,9 +100,9 @@ class EquipmentAssignmentRepositoryTest {
     void findByEquipmentIdAndCheckedInAtIsNull_returnsOpenAssignment_whenOneExists() {
         EquipmentAssignment openAssignment = EquipmentAssignment.builder()
                 .equipment(excavator)
-                .assignedToId(1L)
+                .assignedToId(worker.getId())
                 .site("Site A")
-                .checkedOutAt(LocalDateTime.now().minusDays(2))
+                .checkedOutAt(Instant.now().minus(2, ChronoUnit.DAYS))
                 .build();
         entityManager.persistAndFlush(openAssignment);
 
@@ -92,7 +111,7 @@ class EquipmentAssignmentRepositoryTest {
 
         assertThat(result).isPresent();
         assertThat(result.get().getEquipment().getId()).isEqualTo(excavator.getId());
-        assertThat(result.get().getAssignedToId()).isEqualTo(1L);
+        assertThat(result.get().getAssignedToId()).isEqualTo(worker.getId());
         assertThat(result.get().getCheckedInAt()).isNull();
     }
 
@@ -100,10 +119,10 @@ class EquipmentAssignmentRepositoryTest {
     void findByEquipmentIdAndCheckedInAtIsNull_returnsEmpty_onceCheckedInAtIsSet() {
         EquipmentAssignment closedAssignment = EquipmentAssignment.builder()
                 .equipment(excavator)
-                .assignedToId(1L)
+                .assignedToId(worker.getId())
                 .site("Site A")
-                .checkedOutAt(LocalDateTime.now().minusDays(5))
-                .checkedInAt(LocalDateTime.now().minusDays(1))
+                .checkedOutAt(Instant.now().minus(5, ChronoUnit.DAYS))
+                .checkedInAt(Instant.now().minus(1, ChronoUnit.DAYS))
                 .build();
         entityManager.persistAndFlush(closedAssignment);
 
@@ -123,13 +142,13 @@ class EquipmentAssignmentRepositoryTest {
 
     @Test
     void findByAssignedToIdAndCheckedInAtIsNull_returnsAllOpenAssignments_acrossMultipleEquipment() {
-        Long userId = 42L;
+        Long userId = worker.getId();
 
         EquipmentAssignment openOnExcavator = EquipmentAssignment.builder()
                 .equipment(excavator)
                 .assignedToId(userId)
                 .site("Site A")
-                .checkedOutAt(LocalDateTime.now().minusDays(3))
+                .checkedOutAt(Instant.now().minus(3, ChronoUnit.DAYS))
                 .build();
         entityManager.persistAndFlush(openOnExcavator);
 
@@ -137,7 +156,7 @@ class EquipmentAssignmentRepositoryTest {
                 .equipment(bulldozer)
                 .assignedToId(userId)
                 .site("Site B")
-                .checkedOutAt(LocalDateTime.now().minusDays(1))
+                .checkedOutAt(Instant.now().minus(1, ChronoUnit.DAYS))
                 .build();
         entityManager.persistAndFlush(openOnBulldozer);
 
@@ -153,17 +172,17 @@ class EquipmentAssignmentRepositoryTest {
                 .equipment(crane)
                 .assignedToId(userId)
                 .site("Site C")
-                .checkedOutAt(LocalDateTime.now().minusDays(10))
-                .checkedInAt(LocalDateTime.now().minusDays(9))
+                .checkedOutAt(Instant.now().minus(10, ChronoUnit.DAYS))
+                .checkedInAt(Instant.now().minus(9, ChronoUnit.DAYS))
                 .build();
         entityManager.persistAndFlush(closedForSameUser);
 
         // Open assignment for a different user must not appear either.
         EquipmentAssignment openForOtherUser = EquipmentAssignment.builder()
                 .equipment(crane)
-                .assignedToId(99L)
+                .assignedToId(otherWorker.getId())
                 .site("Site D")
-                .checkedOutAt(LocalDateTime.now().minusHours(4))
+                .checkedOutAt(Instant.now().minus(4, ChronoUnit.HOURS))
                 .build();
         entityManager.persistAndFlush(openForOtherUser);
 
@@ -179,12 +198,12 @@ class EquipmentAssignmentRepositoryTest {
 
     @Test
     void save_persistsAndReloadsCheckedOutAndCheckedInTimestamps_notNullCoerced() {
-        LocalDateTime checkedOut = LocalDateTime.now().minusDays(7).withNano(0);
-        LocalDateTime checkedIn = LocalDateTime.now().minusDays(2).withNano(0);
+        Instant checkedOut = Instant.now().minus(7, ChronoUnit.DAYS).truncatedTo(ChronoUnit.SECONDS);
+        Instant checkedIn = Instant.now().minus(2, ChronoUnit.DAYS).truncatedTo(ChronoUnit.SECONDS);
 
         EquipmentAssignment assignment = EquipmentAssignment.builder()
                 .equipment(excavator)
-                .assignedToId(7L)
+                .assignedToId(worker.getId())
                 .site("Site E")
                 .checkedOutAt(checkedOut)
                 .checkedInAt(checkedIn)
@@ -196,8 +215,8 @@ class EquipmentAssignmentRepositoryTest {
         EquipmentAssignment persisted = entityManager.persistFlushFind(assignment);
 
         assertThat(persisted.getCheckedOutAt()).isNotNull();
-        assertThat(persisted.getCheckedOutAt()).isEqualToIgnoringNanos(checkedOut);
+        assertThat(persisted.getCheckedOutAt()).isEqualTo(checkedOut);
         assertThat(persisted.getCheckedInAt()).isNotNull();
-        assertThat(persisted.getCheckedInAt()).isEqualToIgnoringNanos(checkedIn);
+        assertThat(persisted.getCheckedInAt()).isEqualTo(checkedIn);
     }
 }

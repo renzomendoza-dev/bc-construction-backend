@@ -10,7 +10,7 @@ import org.springframework.data.annotation.CreatedBy;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Entity
 @Table(name = "equipment_assignment")
@@ -37,10 +37,10 @@ public class EquipmentAssignment {
     private String site;
 
     @Column(name = "checked_out_at", nullable = false)
-    private LocalDateTime checkedOutAt;
+    private Instant checkedOutAt;
 
     @Column(name = "checked_in_at")
-    private LocalDateTime checkedInAt;
+    private Instant checkedInAt;
 
     @Column(name = "condition_out", length = 500)
     private String conditionOut;
@@ -54,5 +54,5 @@ public class EquipmentAssignment {
 
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 }

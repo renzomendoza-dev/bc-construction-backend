@@ -27,6 +27,25 @@
 		<org.mapstruct.version>1.6.3</org.mapstruct.version>
 		<org.projectlombok.version>1.18.42</org.projectlombok.version>
 	</properties>
+	<dependencyManagement>
+		<dependencies>
+			<dependency>
+				<!-- Spring Boot 4.1.0's managed version (2.4.240) is newer than
+				     Flyway has been verified with, and exhibits a real regression:
+				     a CHECK constraint added via ALTER TABLE from one pooled
+				     connection isn't reliably visible/valid on another pooled
+				     connection, so a later Hibernate insert fails with
+				     "Check constraint invalid" even for values that satisfy it.
+				     Every CHECK constraint defined inline in a CREATE TABLE is
+				     unaffected - only ALTER TABLE ... ADD CONSTRAINT ... CHECK
+				     triggers it. Pinned to the last version Flyway verified
+				     against until upstream fixes this. -->
+				<groupId>com.h2database</groupId>
+				<artifactId>h2</artifactId>
+				<version>2.3.232</version>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
 	<dependencies>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>

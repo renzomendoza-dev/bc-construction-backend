@@ -1,5 +1,6 @@
 package com.bcconstructionservices.inventory.dto;
 
+import com.bcconstructionservices.inventory.entity.WarehouseType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -27,4 +28,8 @@ public class WarehouseCreateRequest {
     @NotBlank
     @Schema(description = "Display name of the warehouse", example = "Main Distribution Center")
     private String name;
+
+    @Schema(description = "Type of warehouse; defaults to MAIN when omitted", example = "MAIN",
+            allowableValues = {"MAIN", "SITE"})
+    private WarehouseType type;
 }

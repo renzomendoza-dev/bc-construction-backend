@@ -13,8 +13,8 @@ import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "equipment")
@@ -54,9 +54,9 @@ public class Equipment {
     private String currentSite;
 
     @Column(name = "checked_out_at")
-    private LocalDateTime checkedOutAt;
+    private Instant checkedOutAt;
 
-    @Column(name = "purchase_price", precision = 12, scale = 2)
+    @Column(name = "purchase_price", precision = 14, scale = 2)
     private BigDecimal purchasePrice;
 
     @Column(name = "purchase_date")
@@ -75,9 +75,9 @@ public class Equipment {
 
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
-    private LocalDateTime updatedAt;
+    private Instant updatedAt;
 }

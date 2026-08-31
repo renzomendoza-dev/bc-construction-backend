@@ -18,7 +18,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 @Service
@@ -76,7 +77,7 @@ public class EquipmentService {
             throw new InvalidCheckoutUserException(userId);
         }
 
-        LocalDateTime now = LocalDateTime.now();
+        Instant now = Instant.now();
 
         EquipmentAssignment assignment = EquipmentAssignment.builder()
                 .equipment(equipment)
@@ -102,7 +103,7 @@ public class EquipmentService {
                 .findByEquipmentIdAndCheckedInAtIsNull(equipmentId)
                 .orElseThrow(() -> new NoOpenAssignmentException(equipmentId));
 
-        openAssignment.setCheckedInAt(LocalDateTime.now());
+        openAssignment.setCheckedInAt(Instant.now());
         openAssignment.setConditionIn(conditionIn);
         equipmentAssignmentRepository.save(openAssignment);
 
@@ -116,7 +117,7 @@ public class EquipmentService {
 
     @Transactional(readOnly = true)
     public List<Equipment> findOverdue(int days) {
-        LocalDateTime cutoff = LocalDateTime.now().minusDays(days);
+        Instant cutoff = Instant.now().minus(days, ChronoUnit.DAYS);
         return equipmentRepository.findByStatusAndCheckedOutAtBefore(EquipmentStatus.CHECKED_OUT, cutoff);
     }
 }

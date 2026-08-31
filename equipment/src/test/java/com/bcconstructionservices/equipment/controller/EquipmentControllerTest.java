@@ -23,7 +23,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.List;
 
@@ -288,7 +289,7 @@ class EquipmentControllerTest {
                 .status(EquipmentStatus.CHECKED_OUT)
                 .currentHolderId(17L)
                 .currentSite("Site C")
-                .checkedOutAt(LocalDateTime.now())
+                .checkedOutAt(Instant.now())
                 .build();
 
         EquipmentResponse response = sampleResponse(1L, EquipmentStatus.CHECKED_OUT);
@@ -417,7 +418,7 @@ class EquipmentControllerTest {
                 .id(5L)
                 .assetTag("EQ-2026-0005")
                 .status(EquipmentStatus.CHECKED_OUT)
-                .checkedOutAt(LocalDateTime.now().minusDays(10))
+                .checkedOutAt(Instant.now().minus(10, ChronoUnit.DAYS))
                 .build();
 
         EquipmentResponse response = sampleResponse(5L, EquipmentStatus.CHECKED_OUT);

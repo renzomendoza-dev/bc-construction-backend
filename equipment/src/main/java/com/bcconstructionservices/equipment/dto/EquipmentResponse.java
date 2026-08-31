@@ -9,8 +9,8 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 
 @Getter
 @Setter
@@ -47,7 +47,7 @@ public class EquipmentResponse {
     @Schema(example = "Site B - Riverside")
     private String currentSite;
 
-    private LocalDateTime checkedOutAt;
+    private Instant checkedOutAt;
 
     @Schema(example = "249.99")
     private BigDecimal purchasePrice;
@@ -59,6 +59,6 @@ public class EquipmentResponse {
 
     private Long createdBy;
     private Long updatedBy;
-    private LocalDateTime createdAt;
-    private LocalDateTime updatedAt;
+    private Instant createdAt;
+    private Instant updatedAt;
 }

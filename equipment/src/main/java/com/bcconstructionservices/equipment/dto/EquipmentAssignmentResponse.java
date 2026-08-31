@@ -7,7 +7,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Getter
 @Setter
@@ -35,8 +35,8 @@ public class EquipmentAssignmentResponse {
     @Schema(example = "Site B - Riverside")
     private String site;
 
-    private LocalDateTime checkedOutAt;
-    private LocalDateTime checkedInAt;
+    private Instant checkedOutAt;
+    private Instant checkedInAt;
 
     @Schema(example = "Minor scuff on housing, fully functional")
     private String conditionOut;
@@ -45,5 +45,5 @@ public class EquipmentAssignmentResponse {
     private String conditionIn;
 
     private Long createdBy;
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 }

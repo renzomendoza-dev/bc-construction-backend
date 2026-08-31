@@ -69,6 +69,12 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(MaterialRequestNotEditableException.class)
+    public ResponseEntity<ErrorResponse> handleMaterialRequestNotEditable(
+            MaterialRequestNotEditableException ex, HttpServletRequest request) {
+        return buildResponse(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), request);
+    }
+
     /**
      * Thrown by {@code @PreAuthorize} when an authenticated caller lacks the
      * required permission. Handled explicitly here — otherwise it would be

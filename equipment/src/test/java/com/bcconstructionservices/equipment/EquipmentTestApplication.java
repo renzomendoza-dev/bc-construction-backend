@@ -1,6 +1,7 @@
 package com.bcconstructionservices.equipment;
 
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.persistence.autoconfigure.EntityScan;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -14,6 +15,10 @@ import static org.mockito.Mockito.mock;
 import static org.springframework.security.config.Customizer.withDefaults;
 
 @SpringBootApplication(scanBasePackages = "com.bcconstructionservices.equipment")
+@EntityScan(basePackages = {
+        "com.bcconstructionservices.equipment.entity",
+        "com.bcconstructionservices.user.entity"
+})
 public class EquipmentTestApplication {
 
     /**

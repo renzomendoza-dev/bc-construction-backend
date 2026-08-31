@@ -4,6 +4,10 @@ spring:
     properties:
       hibernate:
         format_sql: true
+  flyway:
+    # dev-data seeds dummy demo rows (V14/V15) on top of the real schema
+    # migrations in db/migration. Never add this location to application-prod.yaml.
+    locations: classpath:db/migration,classpath:db/dev-data
 
 server:
   error:

@@ -11,8 +11,10 @@ import java.util.Optional;
  * Stub auditor for repository slice tests. The real AuditorAwareImpl
  * (which resolves the Long app-local user ID from the JWT) lives in
  * user/app and is intentionally out of scope here — this test slice
- * only needs created_at/updated_at (and created_by/updated_by, if
- * NOT NULL) populated, not a real authenticated user.
+ * only needs created_at/updated_at populated, not a real authenticated
+ * user. Returns empty (rather than a fake id like 0L) since created_by/
+ * updated_by are nullable and now FK-constrained to app_user — a fake id
+ * would violate that FK the moment a real app_user table exists.
  *
  * Kept separate from {@link EquipmentTestApplication} (rather than
  * declaring @EnableJpaAuditing directly on it) because that class also
@@ -27,6 +29,6 @@ public class JpaAuditingTestConfig {
 
     @Bean
     public AuditorAware<Long> testAuditorAware() {
-        return () -> Optional.of(0L);
+        return Optional::empty;
     }
 }

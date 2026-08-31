@@ -21,7 +21,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 
@@ -100,7 +101,7 @@ class EquipmentServiceTest {
                 .status(EquipmentStatus.CHECKED_OUT)
                 .currentHolderId(17L)
                 .currentSite("Site A")
-                .checkedOutAt(LocalDateTime.now().minusDays(1))
+                .checkedOutAt(Instant.now().minus(1, ChronoUnit.DAYS))
                 .build();
 
         // NOTE: stubs are added per-test in the test body, not here, so tests that
@@ -295,7 +296,7 @@ class EquipmentServiceTest {
                 .equipment(checkedOutEquipment)
                 .assignedToId(17L)
                 .site("Site A")
-                .checkedOutAt(LocalDateTime.now().minusDays(1))
+                .checkedOutAt(Instant.now().minus(1, ChronoUnit.DAYS))
                 .checkedInAt(null)
                 .build();
 
@@ -341,28 +342,28 @@ class EquipmentServiceTest {
                 .assetTag("EQ-2026-0010")
                 .name("Overdue Crane")
                 .status(EquipmentStatus.CHECKED_OUT)
-                .checkedOutAt(LocalDateTime.now().minusDays(10))
+                .checkedOutAt(Instant.now().minus(10, ChronoUnit.DAYS))
                 .build();
 
-        when(equipmentRepository.findByStatusAndCheckedOutAtBefore(eq(EquipmentStatus.CHECKED_OUT), any(LocalDateTime.class)))
+        when(equipmentRepository.findByStatusAndCheckedOutAtBefore(eq(EquipmentStatus.CHECKED_OUT), any(Instant.class)))
                 .thenReturn(List.of(overdueEquipment));
 
         List<Equipment> result = equipmentService.findOverdue(5);
 
         assertThat(result).containsExactly(overdueEquipment);
 
-        ArgumentCaptor<LocalDateTime> cutoffCaptor = ArgumentCaptor.forClass(LocalDateTime.class);
+        ArgumentCaptor<Instant> cutoffCaptor = ArgumentCaptor.forClass(Instant.class);
         verify(equipmentRepository, times(1))
                 .findByStatusAndCheckedOutAtBefore(eq(EquipmentStatus.CHECKED_OUT), cutoffCaptor.capture());
 
         // Cutoff should be ~5 days before "now" — allow a small tolerance for test
-        // execution time between LocalDateTime.now() here and inside the service.
-        LocalDateTime expectedCutoff = LocalDateTime.now().minusDays(5);
+        // execution time between Instant.now() here and inside the service.
+        Instant expectedCutoff = Instant.now().minus(5, ChronoUnit.DAYS);
         assertThat(cutoffCaptor.getValue())
-                .isCloseTo(expectedCutoff, within(2, java.time.temporal.ChronoUnit.SECONDS));
+                .isCloseTo(expectedCutoff, within(2, ChronoUnit.SECONDS));
     }
 
-    private static org.assertj.core.data.TemporalUnitWithinOffset within(long value, java.time.temporal.ChronoUnit unit) {
+    private static org.assertj.core.data.TemporalUnitWithinOffset within(long value, ChronoUnit unit) {
         return new org.assertj.core.data.TemporalUnitWithinOffset(value, unit);
     }
 }

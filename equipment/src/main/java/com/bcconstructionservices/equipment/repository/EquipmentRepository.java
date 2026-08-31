@@ -4,7 +4,7 @@ import com.bcconstructionservices.equipment.entity.Equipment;
 import com.bcconstructionservices.equipment.entity.EquipmentStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -14,5 +14,5 @@ public interface EquipmentRepository extends JpaRepository<Equipment, Long> {
 
     List<Equipment> findByStatus(EquipmentStatus status);
 
-    List<Equipment> findByStatusAndCheckedOutAtBefore(EquipmentStatus status, LocalDateTime cutoff);
+    List<Equipment> findByStatusAndCheckedOutAtBefore(EquipmentStatus status, Instant cutoff);
 }
