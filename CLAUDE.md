@@ -106,6 +106,23 @@ replacing) the existing single-item endpoints:
   `EquipmentAssignmentBatch`'s direction, resolved from `destinationWarehouseId`'s `Warehouse.type`
   plus (per line, at submit time) the referenced equipment's current status, not a stored enum.
 
+## Aggregation-root entities (MaterialRequest, PurchaseOrder) — recompute status cumulatively
+
+A different recurring shape: a parent that's fulfilled incrementally by *multiple* child
+records over time (`MaterialRequest` by however many `TransferBatch`es reference it via
+`sourceMaterialRequestId`; `PurchaseOrder` by however many `PurchaseReceipt`s reference it via
+`purchaseOrderId`), landing on `PARTIALLY_*`/fully-fulfilled status as those children complete.
+
+**Known bug, don't copy it**: `TransferBatchService.updateLinkedMaterialRequestStatus` only
+compares the *current* batch's transferred quantities against what the request's lines still
+need — it does not sum across every batch previously submitted against that same request. Two
+separate partial-fulfillment batches over time can therefore compute the wrong status. This
+wasn't fixed in place (out of scope when found) but was **not** repeated:
+`PurchaseOrderService.updateStatusFromReceipts` sums *every* `CONFIRMED` `PurchaseReceipt`
+against the order, every time, via a repository query scoped to the parent id rather than the
+just-processed child's lines. Do this (query-scoped-to-parent, not lines-just-processed) for any
+new entity in this shape.
+
 ## Testing
 
 - Service-layer: Mockito unit tests (`@ExtendWith(MockitoExtension.class)`), manual per-test
