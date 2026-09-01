@@ -56,6 +56,10 @@ public class PurchaseReceiptResponse {
             example = "42")
     private Long fulfillsTransferBatchId;
 
+    @Schema(description = "Identifier of the PurchaseOrder this receipt is (at least partially) fulfilling, if any",
+            example = "12")
+    private Long purchaseOrderId;
+
     @Schema(description = "Line items purchased on this receipt")
     private List<PurchaseReceiptLineResponse> lines;
 

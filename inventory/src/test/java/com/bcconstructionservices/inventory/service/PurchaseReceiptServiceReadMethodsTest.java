@@ -14,6 +14,7 @@ import com.bcconstructionservices.inventory.mapper.PurchaseReceiptLineMapper;
 import com.bcconstructionservices.inventory.mapper.PurchaseReceiptMapper;
 import com.bcconstructionservices.inventory.repository.ItemRepository;
 import com.bcconstructionservices.inventory.repository.ItemSupplierRepository;
+import com.bcconstructionservices.inventory.repository.PurchaseOrderRepository;
 import com.bcconstructionservices.inventory.repository.PurchaseReceiptLineRepository;
 import com.bcconstructionservices.inventory.repository.PurchaseReceiptRepository;
 import com.bcconstructionservices.inventory.repository.SupplierRepository;
@@ -115,6 +116,10 @@ class PurchaseReceiptServiceReadMethodsTest {
     private WarehouseRepository warehouseRepository;
     @Mock
     private TransferBatchRepository transferBatchRepository;
+    @Mock
+    private PurchaseOrderRepository purchaseOrderRepository;
+    @Mock
+    private PurchaseOrderService purchaseOrderService;
 
     @InjectMocks
     private PurchaseReceiptService purchaseReceiptService;

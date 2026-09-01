@@ -76,6 +76,16 @@ public class PurchaseReceipt {
     @Column(name = "fulfills_transfer_batch_id")
     private Long fulfillsTransferBatchId;
 
+    /**
+     * Set when this receipt is (at least partially) fulfilling a
+     * PurchaseOrder placed with the same supplier in advance; null for a
+     * receipt with no such origin. Independent of fulfillsTransferBatchId —
+     * a receipt can carry either, both, or neither. Real FK, same reasoning
+     * as fulfillsTransferBatchId.
+     */
+    @Column(name = "purchase_order_id")
+    private Long purchaseOrderId;
+
     @CreatedBy
     @Column(name = "created_by", updatable = false)
     private Long createdBy;

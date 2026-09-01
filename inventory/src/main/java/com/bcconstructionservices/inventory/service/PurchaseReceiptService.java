@@ -2,6 +2,7 @@ package com.bcconstructionservices.inventory.service;
 
 import com.bcconstructionservices.inventory.dto.*;
 import com.bcconstructionservices.inventory.entity.*;
+import com.bcconstructionservices.inventory.exception.PurchaseOrderNotOpenException;
 import com.bcconstructionservices.inventory.exception.ReceiptProcessingException;
 import com.bcconstructionservices.inventory.exception.ResourceNotFoundException;
 import com.bcconstructionservices.inventory.exception.TransferBatchNotAwaitingPurchaseException;
@@ -41,6 +42,8 @@ public class PurchaseReceiptService {
     private final ItemRepository itemRepository;
     private final WarehouseRepository warehouseRepository;
     private final TransferBatchRepository transferBatchRepository;
+    private final PurchaseOrderRepository purchaseOrderRepository;
+    private final PurchaseOrderService purchaseOrderService;
     private final InventoryService inventoryService;
     private final PurchaseReceiptMapper purchaseReceiptMapper;
     private final FileStorageService fileStorageService;
@@ -81,13 +84,26 @@ public class PurchaseReceiptService {
             }
         }
 
+        // Independent of fulfillsTransferBatchId — a receipt can carry
+        // either, both, or neither. Only rejects an order that's already
+        // terminal (RECEIVED/CLOSED); DRAFT/SUBMITTED/PARTIALLY_RECEIVED are
+        // all fine to receive against.
+        if (request.getPurchaseOrderId() != null) {
+            PurchaseOrder purchaseOrder = purchaseOrderRepository.findById(request.getPurchaseOrderId())
+                    .orElseThrow(() -> new ResourceNotFoundException("PurchaseOrder", request.getPurchaseOrderId()));
+            if (purchaseOrder.getStatus() == PurchaseOrderStatus.RECEIVED
+                    || purchaseOrder.getStatus() == PurchaseOrderStatus.CLOSED) {
+                throw new PurchaseOrderNotOpenException(request.getPurchaseOrderId(), purchaseOrder.getStatus());
+            }
+        }
+
         // purchaseReceiptMapper.toEntity only covers receiptNumber/purchaseDate/
         // imageUrl/notes — supplier, warehouse, lines, totalAmount, and confirmed(At)
         // are all ignore=true by design (see PurchaseReceiptMapper's javadoc), so
-        // they're still assembled here. fulfillsTransferBatchId IS covered by the
-        // mapper (plain 1:1 copy, validated above) since it needs no repository
-        // lookup to attach — unlike supplier/warehouse it's stored as a plain id,
-        // not a managed association.
+        // they're still assembled here. fulfillsTransferBatchId/purchaseOrderId ARE
+        // covered by the mapper (plain 1:1 copy, both validated above) since they
+        // need no repository lookup to attach — unlike supplier/warehouse they're
+        // stored as plain ids, not managed associations.
         PurchaseReceipt receipt = purchaseReceiptMapper.toEntity(request);
         receipt.setSupplier(supplier);
         receipt.setWarehouse(warehouse);
@@ -181,6 +197,9 @@ public class PurchaseReceiptService {
         // and receipt already carries this field regardless.
         if (receipt.getFulfillsTransferBatchId() != null) {
             unblockLinkedTransferBatch(receipt.getFulfillsTransferBatchId());
+        }
+        if (receipt.getPurchaseOrderId() != null) {
+            purchaseOrderService.updateStatusFromReceipts(receipt.getPurchaseOrderId());
         }
 
         return purchaseReceiptMapper.toResponse(saved);

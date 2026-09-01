@@ -20,6 +20,7 @@ current user for `createdBy`/`confirmedBy` fields).
 | `PurchaseReceipt` / `PurchaseReceiptLine` | A purchase from a supplier into a warehouse; draft until `confirmed`, at which point its lines post `IN` stock movements. |
 | `MaterialRequest` / `MaterialRequestLineItem` | A site's request for materials to be pulled from a `MAIN` warehouse; editable until fulfillment starts, then locked. |
 | `TransferBatch` / `TransferLineItem` | A batch move of stock from a `MAIN` warehouse to a `SITE` warehouse; optionally fulfills a `MaterialRequest`. |
+| `PurchaseOrder` / `PurchaseOrderLine` | An order placed with a supplier before anything has physically arrived — an earlier stage than `PurchaseReceipt`. Editable while `DRAFT`, locked once `SUBMITTED`; one order can have multiple receipts against it over time. |
 
 `Warehouse.type` (`MAIN` or `SITE`) distinguishes a stocked main/branch warehouse from a
 project-site warehouse that only receives stock via transfer batches — material requests can
@@ -76,12 +77,21 @@ All endpoints return `application/json` and validate request bodies with `@Valid
 - `GET /api/suppliers/for-item/{itemId}` — list suppliers for an item
 
 ### Purchase receipts — `/api/purchase-receipts`
-- `POST /api/purchase-receipts` — create a draft receipt with line items; optionally set `fulfillsTransferBatchId` to link it to a blocked transfer batch (422 if that batch isn't `AWAITING_PURCHASE`)
-- `POST /api/purchase-receipts/{receiptId}/confirm` — confirm a draft receipt, posting `IN` stock movements for each line, and flipping any linked `AWAITING_PURCHASE` transfer batch back to `DRAFT`
+- `POST /api/purchase-receipts` — create a draft receipt with line items; optionally set `fulfillsTransferBatchId` to link it to a blocked transfer batch (422 if that batch isn't `AWAITING_PURCHASE`), and/or `purchaseOrderId` to link it to a purchase order (422 if that order is `RECEIVED`/`CLOSED`) — the two are independent, a receipt can carry either, both, or neither
+- `POST /api/purchase-receipts/{receiptId}/confirm` — confirm a draft receipt, posting `IN` stock movements for each line, flipping any linked `AWAITING_PURCHASE` transfer batch back to `DRAFT`, and recomputing any linked purchase order's status (`PARTIALLY_RECEIVED`/`RECEIVED`)
 - `GET /api/purchase-receipts/{receiptId}` — get by id
 - `GET /api/purchase-receipts` — paginated list, filterable by `supplierId`/date range/`fulfillsTransferBatchId`
 - `GET /api/purchase-receipts/item/{itemId}/history` — purchase history for an item
 - `POST /api/purchase-receipts/{receiptId}/image` (multipart) — upload a receipt image
+
+### Purchase orders — `/api/purchase-orders`
+- `POST /api/purchase-orders` — create a draft order with line items
+- `PUT /api/purchase-orders/{id}` — full-replacement update of `notes`/`lines`, `DRAFT` only (422 otherwise)
+- `POST /api/purchase-orders/{id}/submit` — `DRAFT` → `SUBMITTED`, `DRAFT` only (422 otherwise); locks line items from this point
+- `POST /api/purchase-orders/{id}/close` — manually terminate the order regardless of how much has been received (422 if already `RECEIVED`/`CLOSED`)
+- `GET /api/purchase-orders/{id}` — get by id, including per-line `receivedQuantity`
+- `GET /api/purchase-orders` — paginated list, filterable by `supplierId`/`status`
+- `GET /api/purchase-orders/suggestions?supplierId=` — suggested line items for a new order against a supplier; see "Purchase order suggestions" below
 
 ### Material requests — `/api/inventory/material-requests`
 - `POST /api/inventory/material-requests` — create a request against a `SITE` warehouse (400 if the warehouse isn't type `SITE`)
@@ -123,6 +133,46 @@ already marked the ambient transaction rollback-only, so a plain write at that p
 be discarded. Every stock transfer already applied earlier in that submit's loop is still rolled
 back as before; only the `AWAITING_PURCHASE` marker survives.
 
+## Purchase orders
+
+`PurchaseOrder.status`: `DRAFT` → `SUBMITTED` → `PARTIALLY_RECEIVED` → `RECEIVED`, plus a manual
+`CLOSED` reachable from any non-terminal status. `RECEIVED` and `CLOSED` are deliberately
+separate terminal states — one means "every line's ordered quantity was fully covered by
+confirmed receipts," the other means "manually abandoned regardless of coverage" (supplier
+discontinued an item, the order was over-cautious, etc.) — so the two are never conflated.
+`PARTIALLY_RECEIVED`/`RECEIVED` are recomputed automatically (`PurchaseOrderService.updateStatusFromReceipts`)
+every time a `PurchaseReceipt` linked via `purchaseOrderId` is confirmed, cumulatively across
+*every* confirmed receipt ever created against that order, not just the one just confirmed.
+
+There is deliberately no auto-chaining for a `PARTIALLY_RECEIVED` order's remaining shortfall —
+no new `TransferBatch`/shortfall is generated automatically. Re-querying
+`GET /api/purchase-orders/suggestions?supplierId=` is the intended manual follow-up.
+
+### Purchase order suggestions
+
+`GET /api/purchase-orders/suggestions?supplierId=` combines three independent sources for a
+given supplier:
+
+1. Shortfall items on `AWAITING_PURCHASE` `TransferBatch` lines — re-checked against **current**
+   stock at each batch's origin warehouse (not the stale moment the batch failed), since stock
+   may have arrived from elsewhere since then.
+2. Items at/below their reorder threshold (same data as `GET /api/inventory/low-stock`).
+3. Items on open (`SUBMITTED`/`PARTIALLY_FULFILLED`) `MaterialRequest` lines not yet fully
+   dispatched — "dispatched" is the sum of every `COMPLETED` `TransferBatch`'s lines sourced from
+   that request.
+
+Two deliberate calls worth knowing about:
+
+- **Not filtered by `ItemSupplier`.** Suggestions are never restricted to items with an existing
+  `ItemSupplier` link to the queried supplier — every candidate item is returned regardless, with
+  `linkedToSupplier` telling the caller whether that link exists. Chosen over filtering because
+  hiding a genuine shortfall due to an unpopulated `ItemSupplier` link would be worse than
+  over-suggesting; suggestions are a starting point to edit, never a hard constraint.
+- **Sources are summed, not deduplicated.** The same item can legitimately qualify from more than
+  one source (e.g. a blocked `TransferBatch` sourced from a `MaterialRequest` that's therefore
+  still open too) — their quantities are added together rather than cross-referenced to avoid
+  double-counting. Accepted deliberately, for the same "err toward suggesting too much" reasoning.
+
 ## Stock adjustments vs. transfers
 
 - **`POST /api/inventory/adjust`** — single-location change. `type` determines direction
@@ -162,6 +212,8 @@ app:
 | `MaterialRequestNotEditableException` | 422 |
 | `TransferBatchNotAwaitingPurchaseException` | 422 |
 | `TransferBatchNotDeletableException` | 422 |
+| `PurchaseOrderNotEditableException` | 422 |
+| `PurchaseOrderNotOpenException` | 422 |
 | Bean validation failures | 400 (field-level `ValidationErrorResponse`) |
 | Malformed JSON | 400 |
 | `IllegalStateException` | 401 |
@@ -172,12 +224,13 @@ app:
 
 ## Database migrations
 
-Flyway migrations live in `src/main/resources/db/migration`, `V2` through `V23` (module-local —
+Flyway migrations live in `src/main/resources/db/migration`, `V2` through `V25` (module-local —
 the full version sequence is shared and global across all modules, so this module doesn't own
 every number), covering items, item images, suppliers, item-supplier links, warehouses, storage
 locations, inventory stock, stock movements, purchase receipts and lines, a `type` column added
-to `warehouse` (`MAIN`/`SITE`), the transfer batch / material request tables, and (`V23`) the
-`AWAITING_PURCHASE` transfer batch status plus `purchase_receipt.fulfills_transfer_batch_id`.
+to `warehouse` (`MAIN`/`SITE`), the transfer batch / material request tables, (`V23`) the
+`AWAITING_PURCHASE` transfer batch status plus `purchase_receipt.fulfills_transfer_batch_id`, and
+(`V25`) `purchase_order`/`purchase_order_line` plus `purchase_receipt.purchase_order_id`.
 Dev-only demo data seeds live separately under `app/src/main/resources/db/dev-data` and are only
 loaded when the `dev` Spring profile's `flyway.locations` override is active — never in prod.
 

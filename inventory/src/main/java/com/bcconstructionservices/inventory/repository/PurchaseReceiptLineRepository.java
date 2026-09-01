@@ -22,4 +22,18 @@ public interface PurchaseReceiptLineRepository extends JpaRepository<PurchaseRec
             ORDER BY pr.purchaseDate DESC
             """)
     List<PurchaseReceiptLine> findByItemIdOrderByReceiptPurchaseDateDesc(@Param("itemId") Long itemId);
+
+    /**
+     * Every line from a CONFIRMED receipt against this purchase order — used
+     * by PurchaseOrderService to compute each of the order's own lines'
+     * receivedQuantity (summed per item) and to decide whether the order is
+     * now PARTIALLY_RECEIVED or fully RECEIVED. A draft (unconfirmed) receipt
+     * hasn't touched inventory yet, so it doesn't count as "received".
+     */
+    @Query("""
+            SELECT prl FROM PurchaseReceiptLine prl
+            JOIN prl.purchaseReceipt pr
+            WHERE pr.purchaseOrderId = :purchaseOrderId AND pr.confirmed = true
+            """)
+    List<PurchaseReceiptLine> findConfirmedByPurchaseOrderId(@Param("purchaseOrderId") Long purchaseOrderId);
 }

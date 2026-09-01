@@ -4,6 +4,7 @@ import com.bcconstructionservices.inventory.dto.PurchaseReceiptCreateRequest;
 import com.bcconstructionservices.inventory.dto.PurchaseReceiptLineRequest;
 import com.bcconstructionservices.inventory.dto.PurchaseReceiptResponse;
 import com.bcconstructionservices.inventory.entity.*;
+import com.bcconstructionservices.inventory.exception.PurchaseOrderNotOpenException;
 import com.bcconstructionservices.inventory.exception.ReceiptProcessingException;
 import com.bcconstructionservices.inventory.exception.ResourceNotFoundException;
 import com.bcconstructionservices.inventory.exception.TransferBatchNotAwaitingPurchaseException;
@@ -99,6 +100,10 @@ class PurchaseReceiptServiceCreateTest {
     private WarehouseRepository warehouseRepository;
     @Mock
     private TransferBatchRepository transferBatchRepository;
+    @Mock
+    private PurchaseOrderRepository purchaseOrderRepository;
+    @Mock
+    private PurchaseOrderService purchaseOrderService;
 
     @InjectMocks
     private PurchaseReceiptService purchaseReceiptService;
@@ -368,6 +373,95 @@ class PurchaseReceiptServiceCreateTest {
             purchaseReceiptService.createPurchaseReceipt(multiLineRequest());
 
             verifyNoInteractions(transferBatchRepository);
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // purchaseOrderId
+    // ---------------------------------------------------------------
+
+    @Nested
+    class PurchaseOrderIdValidation {
+
+        private PurchaseOrder buildOrder(Long id, PurchaseOrderStatus status) {
+            PurchaseOrder order = new PurchaseOrder();
+            order.setId(id);
+            order.setStatus(status);
+            return order;
+        }
+
+        @Test
+        void shouldAcceptAndPersistPurchaseOrderIdWhenOrderIsOpen() {
+            givenValidSupplierAndItems();
+            givenSavesEchoTheirArgument();
+            when(purchaseOrderRepository.findById(12L))
+                    .thenReturn(Optional.of(buildOrder(12L, PurchaseOrderStatus.SUBMITTED)));
+
+            PurchaseReceiptCreateRequest request = multiLineRequest();
+            request.setPurchaseOrderId(12L);
+
+            purchaseReceiptService.createPurchaseReceipt(request);
+
+            PurchaseReceipt saved = captureSavedReceipt();
+            assertThat(saved.getPurchaseOrderId()).isEqualTo(12L);
+        }
+
+        @Test
+        void shouldThrowResourceNotFoundExceptionWhenPurchaseOrderIdDoesNotExist() {
+            givenValidSupplierAndItems();
+            when(purchaseOrderRepository.findById(999L)).thenReturn(Optional.empty());
+
+            PurchaseReceiptCreateRequest request = multiLineRequest();
+            request.setPurchaseOrderId(999L);
+
+            assertThatExceptionOfType(ResourceNotFoundException.class)
+                    .isThrownBy(() -> purchaseReceiptService.createPurchaseReceipt(request));
+
+            assertNothingWasSaved();
+        }
+
+        @Test
+        void shouldThrowPurchaseOrderNotOpenExceptionWhenOrderIsReceived() {
+            givenValidSupplierAndItems();
+            when(purchaseOrderRepository.findById(12L))
+                    .thenReturn(Optional.of(buildOrder(12L, PurchaseOrderStatus.RECEIVED)));
+
+            PurchaseReceiptCreateRequest request = multiLineRequest();
+            request.setPurchaseOrderId(12L);
+
+            assertThatExceptionOfType(PurchaseOrderNotOpenException.class)
+                    .isThrownBy(() -> purchaseReceiptService.createPurchaseReceipt(request))
+                    .satisfies(ex -> {
+                        assertThat(ex.getPurchaseOrderId()).isEqualTo(12L);
+                        assertThat(ex.getStatus()).isEqualTo(PurchaseOrderStatus.RECEIVED);
+                    });
+
+            assertNothingWasSaved();
+        }
+
+        @Test
+        void shouldThrowPurchaseOrderNotOpenExceptionWhenOrderIsClosed() {
+            givenValidSupplierAndItems();
+            when(purchaseOrderRepository.findById(12L))
+                    .thenReturn(Optional.of(buildOrder(12L, PurchaseOrderStatus.CLOSED)));
+
+            PurchaseReceiptCreateRequest request = multiLineRequest();
+            request.setPurchaseOrderId(12L);
+
+            assertThatExceptionOfType(PurchaseOrderNotOpenException.class)
+                    .isThrownBy(() -> purchaseReceiptService.createPurchaseReceipt(request));
+
+            assertNothingWasSaved();
+        }
+
+        @Test
+        void shouldNotInteractWithPurchaseOrderRepositoryWhenPurchaseOrderIdIsNull() {
+            givenValidSupplierAndItems();
+            givenSavesEchoTheirArgument();
+
+            purchaseReceiptService.createPurchaseReceipt(multiLineRequest());
+
+            verifyNoInteractions(purchaseOrderRepository);
         }
     }
 

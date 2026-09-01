@@ -10,6 +10,7 @@ import com.bcconstructionservices.inventory.mapper.PurchaseReceiptLineMapper;
 import com.bcconstructionservices.inventory.mapper.PurchaseReceiptMapper;
 import com.bcconstructionservices.inventory.repository.ItemRepository;
 import com.bcconstructionservices.inventory.repository.ItemSupplierRepository;
+import com.bcconstructionservices.inventory.repository.PurchaseOrderRepository;
 import com.bcconstructionservices.inventory.repository.PurchaseReceiptLineRepository;
 import com.bcconstructionservices.inventory.repository.PurchaseReceiptRepository;
 import com.bcconstructionservices.inventory.repository.SupplierRepository;
@@ -117,6 +118,10 @@ class PurchaseReceiptServiceConfirmTest {
     private WarehouseRepository warehouseRepository;
     @Mock
     private TransferBatchRepository transferBatchRepository;
+    @Mock
+    private PurchaseOrderRepository purchaseOrderRepository;
+    @Mock
+    private PurchaseOrderService purchaseOrderService;
 
     @InjectMocks
     private PurchaseReceiptService purchaseReceiptService;
@@ -527,6 +532,46 @@ class PurchaseReceiptServiceConfirmTest {
             purchaseReceiptService.confirmPurchaseReceipt(RECEIPT_ID);
 
             verifyNoInteractions(transferBatchRepository);
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // Updating a linked PurchaseOrder's status
+    // ---------------------------------------------------------------
+
+    @Nested
+    class UpdateLinkedPurchaseOrderStatus {
+
+        @Test
+        void shouldCallPurchaseOrderServiceWhenPurchaseOrderIdIsSet() {
+            PurchaseReceiptLine line = buildLine(1L, cementItem, 50, "245.00");
+            PurchaseReceipt receipt = buildReceipt(List.of(line));
+            receipt.setPurchaseOrderId(12L);
+            givenReceiptExists(receipt);
+            givenAdjustStockSucceedsForAnyLine();
+            givenNoExistingItemSupplierRows();
+            givenItemSupplierSaveEchoesArgument();
+            givenReceiptSaveEchoesArgument();
+
+            purchaseReceiptService.confirmPurchaseReceipt(RECEIPT_ID);
+
+            verify(purchaseOrderService).updateStatusFromReceipts(12L);
+        }
+
+        @Test
+        void shouldNotInteractWithPurchaseOrderServiceWhenPurchaseOrderIdIsNull() {
+            PurchaseReceiptLine line = buildLine(1L, cementItem, 50, "245.00");
+            PurchaseReceipt receipt = buildReceipt(List.of(line));
+            // purchaseOrderId left null.
+            givenReceiptExists(receipt);
+            givenAdjustStockSucceedsForAnyLine();
+            givenNoExistingItemSupplierRows();
+            givenItemSupplierSaveEchoesArgument();
+            givenReceiptSaveEchoesArgument();
+
+            purchaseReceiptService.confirmPurchaseReceipt(RECEIPT_ID);
+
+            verifyNoInteractions(purchaseOrderService);
         }
     }
 

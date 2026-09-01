@@ -8,9 +8,26 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface TransferBatchRepository extends JpaRepository<TransferBatch, Long> {
+
+    /**
+     * Used by PurchaseOrderService.getSuggestions to find shortfall
+     * candidates — every batch currently blocked on insufficient stock,
+     * regardless of which warehouses it moves between.
+     */
+    List<TransferBatch> findByStatus(TransferBatchStatus status);
+
+    /**
+     * Used by PurchaseOrderService.getSuggestions to compute how much of a
+     * MaterialRequest's line has already been dispatched: the sum of every
+     * COMPLETED batch's line quantities for batches sourced from that
+     * request. Only COMPLETED batches count — a DRAFT/SUBMITTED/
+     * AWAITING_PURCHASE batch hasn't actually moved anything yet.
+     */
+    List<TransferBatch> findBySourceMaterialRequestIdAndStatus(Long sourceMaterialRequestId, TransferBatchStatus status);
 
     /**
      * Fetches a single batch with its origin/destination warehouses eagerly

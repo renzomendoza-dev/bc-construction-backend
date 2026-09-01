@@ -8,9 +8,13 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface MaterialRequestRepository extends JpaRepository<MaterialRequest, Long> {
+
+    /** Used by PurchaseOrderService.getSuggestions to find still-open requests. */
+    List<MaterialRequest> findByStatusIn(List<MaterialRequestStatus> statuses);
 
     /**
      * Fetches a single request with its site warehouse eagerly loaded. Line
