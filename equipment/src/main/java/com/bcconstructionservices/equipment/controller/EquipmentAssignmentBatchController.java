@@ -7,6 +7,7 @@ import com.bcconstructionservices.equipment.entity.EquipmentAssignmentBatchStatu
 import com.bcconstructionservices.equipment.service.EquipmentAssignmentBatchService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -127,7 +128,7 @@ public class EquipmentAssignmentBatchController {
     @Operation(summary = "List equipment assignment batches, optionally filtered by status")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "List of batches",
-                    content = @Content(schema = @Schema(implementation = EquipmentAssignmentBatchResponse.class)))
+                    content = @Content(array = @ArraySchema(schema = @Schema(implementation = EquipmentAssignmentBatchResponse.class))))
     })
     public List<EquipmentAssignmentBatchResponse> findAll(
             @Parameter(description = "Optional status filter")

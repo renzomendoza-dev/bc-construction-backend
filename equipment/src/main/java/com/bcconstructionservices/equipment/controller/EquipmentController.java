@@ -7,6 +7,7 @@ import com.bcconstructionservices.equipment.mapper.EquipmentMapper;
 import com.bcconstructionservices.equipment.service.EquipmentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -80,7 +81,7 @@ public class EquipmentController {
     @Operation(summary = "List equipment, optionally filtered by status")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "List of equipment",
-                    content = @Content(schema = @Schema(implementation = EquipmentResponse.class)))
+                    content = @Content(array = @ArraySchema(schema = @Schema(implementation = EquipmentResponse.class))))
     })
     public List<EquipmentResponse> findAll(
             @Parameter(description = "Optional status filter")
@@ -172,7 +173,7 @@ public class EquipmentController {
     @Operation(summary = "List equipment checked out longer than the given number of days")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "List of overdue equipment",
-                    content = @Content(schema = @Schema(implementation = EquipmentResponse.class)))
+                    content = @Content(array = @ArraySchema(schema = @Schema(implementation = EquipmentResponse.class))))
     })
     public List<EquipmentResponse> findOverdue(
             @Parameter(description = "Threshold in days", example = "7")
