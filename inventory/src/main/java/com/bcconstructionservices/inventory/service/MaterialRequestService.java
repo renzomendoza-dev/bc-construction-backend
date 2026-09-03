@@ -12,6 +12,7 @@ import com.bcconstructionservices.inventory.entity.MaterialRequestStatus;
 import com.bcconstructionservices.inventory.entity.Warehouse;
 import com.bcconstructionservices.inventory.entity.WarehouseType;
 import com.bcconstructionservices.inventory.exception.InvalidStockOperationException;
+import com.bcconstructionservices.inventory.exception.MaterialRequestNotDeletableException;
 import com.bcconstructionservices.inventory.exception.MaterialRequestNotEditableException;
 import com.bcconstructionservices.inventory.exception.ResourceNotFoundException;
 import com.bcconstructionservices.inventory.mapper.MaterialRequestMapper;
@@ -125,6 +126,30 @@ public class MaterialRequestService {
 
         MaterialRequest saved = materialRequestRepository.save(materialRequest);
         return materialRequestMapper.toResponse(saved);
+    }
+
+    /**
+     * Same lock condition as {@link #update}: rejected once status is
+     * PARTIALLY_FULFILLED or FULFILLED, since a submitted TransferBatch has
+     * already moved real stock against the request by then. A SUBMITTED
+     * request — its actual initial persisted state, since create() never
+     * leaves one at DRAFT — can still be deleted, same as it can still be
+     * edited. sourceMaterialRequestId on TransferBatch is a plain column,
+     * not a real FK (see TransferBatch's javadoc), so deleting the request
+     * never touches a draft batch that references it. Line items
+     * cascade-delete via MaterialRequest.lineItems' orphanRemoval.
+     */
+    @Transactional
+    public void delete(Long materialRequestId) {
+        MaterialRequest materialRequest = materialRequestRepository.findById(materialRequestId)
+                .orElseThrow(() -> new ResourceNotFoundException("MaterialRequest", materialRequestId));
+
+        if (materialRequest.getStatus() == MaterialRequestStatus.PARTIALLY_FULFILLED
+                || materialRequest.getStatus() == MaterialRequestStatus.FULFILLED) {
+            throw new MaterialRequestNotDeletableException(materialRequestId, materialRequest.getStatus());
+        }
+
+        materialRequestRepository.delete(materialRequest);
     }
 
     @Transactional(readOnly = true)

@@ -12,6 +12,7 @@ import com.bcconstructionservices.inventory.entity.MaterialRequestStatus;
 import com.bcconstructionservices.inventory.entity.Warehouse;
 import com.bcconstructionservices.inventory.entity.WarehouseType;
 import com.bcconstructionservices.inventory.exception.InvalidStockOperationException;
+import com.bcconstructionservices.inventory.exception.MaterialRequestNotDeletableException;
 import com.bcconstructionservices.inventory.exception.MaterialRequestNotEditableException;
 import com.bcconstructionservices.inventory.exception.ResourceNotFoundException;
 import com.bcconstructionservices.inventory.mapper.MaterialRequestLineItemMapperImpl;
@@ -291,6 +292,79 @@ class MaterialRequestServiceTest {
                             REQUEST_ID, updateRequest(List.of(lineRequest(ITEM_ID, 30)))));
 
             verify(materialRequestRepository, never()).save(any());
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // delete
+    // ---------------------------------------------------------------
+
+    @Nested
+    class DeleteTests {
+
+        private MaterialRequest existingRequestAtStatus(MaterialRequestStatus status) {
+            MaterialRequest request = new MaterialRequest();
+            request.setId(REQUEST_ID);
+            request.setSite(site);
+            request.setStatus(status);
+            request.setLineItems(new ArrayList<>());
+            return request;
+        }
+
+        @Test
+        void shouldDeleteRequestWhenStatusIsSubmitted() {
+            MaterialRequest existing = existingRequestAtStatus(MaterialRequestStatus.SUBMITTED);
+            when(materialRequestRepository.findById(REQUEST_ID)).thenReturn(Optional.of(existing));
+
+            materialRequestService.delete(REQUEST_ID);
+
+            verify(materialRequestRepository).delete(existing);
+        }
+
+        @Test
+        void shouldDeleteRequestWhenStatusIsDraft() {
+            MaterialRequest existing = existingRequestAtStatus(MaterialRequestStatus.DRAFT);
+            when(materialRequestRepository.findById(REQUEST_ID)).thenReturn(Optional.of(existing));
+
+            materialRequestService.delete(REQUEST_ID);
+
+            verify(materialRequestRepository).delete(existing);
+        }
+
+        @Test
+        void shouldThrowResourceNotFoundExceptionWhenRequestDoesNotExistForDelete() {
+            when(materialRequestRepository.findById(REQUEST_ID)).thenReturn(Optional.empty());
+
+            assertThatExceptionOfType(ResourceNotFoundException.class)
+                    .isThrownBy(() -> materialRequestService.delete(REQUEST_ID));
+
+            verify(materialRequestRepository, never()).delete(any());
+        }
+
+        @Test
+        void shouldThrowMaterialRequestNotDeletableExceptionWhenStatusIsPartiallyFulfilled() {
+            MaterialRequest existing = existingRequestAtStatus(MaterialRequestStatus.PARTIALLY_FULFILLED);
+            when(materialRequestRepository.findById(REQUEST_ID)).thenReturn(Optional.of(existing));
+
+            assertThatExceptionOfType(MaterialRequestNotDeletableException.class)
+                    .isThrownBy(() -> materialRequestService.delete(REQUEST_ID))
+                    .satisfies(ex -> {
+                        assertThat(ex.getMaterialRequestId()).isEqualTo(REQUEST_ID);
+                        assertThat(ex.getStatus()).isEqualTo(MaterialRequestStatus.PARTIALLY_FULFILLED);
+                    });
+
+            verify(materialRequestRepository, never()).delete(any());
+        }
+
+        @Test
+        void shouldThrowMaterialRequestNotDeletableExceptionWhenStatusIsFulfilled() {
+            MaterialRequest existing = existingRequestAtStatus(MaterialRequestStatus.FULFILLED);
+            when(materialRequestRepository.findById(REQUEST_ID)).thenReturn(Optional.of(existing));
+
+            assertThatExceptionOfType(MaterialRequestNotDeletableException.class)
+                    .isThrownBy(() -> materialRequestService.delete(REQUEST_ID));
+
+            verify(materialRequestRepository, never()).delete(any());
         }
     }
 

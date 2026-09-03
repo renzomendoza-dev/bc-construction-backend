@@ -7,6 +7,7 @@ import com.bcconstructionservices.inventory.dto.MaterialRequestUpdateRequest;
 import com.bcconstructionservices.inventory.dto.PageResponse;
 import com.bcconstructionservices.inventory.entity.MaterialRequestStatus;
 import com.bcconstructionservices.inventory.exception.InvalidStockOperationException;
+import com.bcconstructionservices.inventory.exception.MaterialRequestNotDeletableException;
 import com.bcconstructionservices.inventory.exception.MaterialRequestNotEditableException;
 import com.bcconstructionservices.inventory.exception.ResourceNotFoundException;
 import com.bcconstructionservices.inventory.service.MaterialRequestService;
@@ -28,7 +29,9 @@ import java.util.List;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doThrow;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -239,6 +242,63 @@ class MaterialRequestControllerTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(validUpdateRequest())))
                     .andExpect(status().isForbidden());
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // DELETE /api/inventory/material-requests/{id}
+    // ---------------------------------------------------------------
+
+    @Nested
+    class DeleteTests {
+
+        @Test
+        void shouldReturn204WhenRequestIsSubmitted() throws Exception {
+            mockMvc.perform(delete("/api/inventory/material-requests/{id}", 14L)
+                            .with(authenticatedJwt("MATERIAL_REQUEST_DELETE")))
+                    .andExpect(status().isNoContent());
+        }
+
+        @Test
+        void shouldReturn404WhenRequestNotFound() throws Exception {
+            doThrow(new ResourceNotFoundException("MaterialRequest", 999L))
+                    .when(materialRequestService).delete(999L);
+
+            mockMvc.perform(delete("/api/inventory/material-requests/{id}", 999L)
+                            .with(authenticatedJwt("MATERIAL_REQUEST_DELETE")))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        void shouldReturn422WhenRequestIsAlreadyFulfilled() throws Exception {
+            doThrow(new MaterialRequestNotDeletableException(14L, MaterialRequestStatus.FULFILLED))
+                    .when(materialRequestService).delete(14L);
+
+            mockMvc.perform(delete("/api/inventory/material-requests/{id}", 14L)
+                            .with(authenticatedJwt("MATERIAL_REQUEST_DELETE")))
+                    .andExpect(status().isUnprocessableEntity());
+        }
+
+        @Test
+        void shouldReturn403WhenCallerLacksMaterialRequestDeletePermission() throws Exception {
+            mockMvc.perform(delete("/api/inventory/material-requests/{id}", 14L)
+                            .with(authenticatedJwt()))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        void shouldReturn403WhenCallerHasOnlyEditPermissionNotDelete() throws Exception {
+            // MATERIAL_REQUEST_EDIT must not be sufficient for this endpoint -
+            // edit and delete are deliberately separate permissions.
+            mockMvc.perform(delete("/api/inventory/material-requests/{id}", 14L)
+                            .with(authenticatedJwt("MATERIAL_REQUEST_EDIT")))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        void shouldReturn401WhenUnauthenticated() throws Exception {
+            mockMvc.perform(delete("/api/inventory/material-requests/{id}", 14L))
+                    .andExpect(status().isUnauthorized());
         }
     }
 

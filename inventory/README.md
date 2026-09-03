@@ -96,6 +96,7 @@ All endpoints return `application/json` and validate request bodies with `@Valid
 ### Material requests — `/api/inventory/material-requests`
 - `POST /api/inventory/material-requests` — create a request against a `SITE` warehouse (400 if the warehouse isn't type `SITE`)
 - `PUT /api/inventory/material-requests/{id}` — full-replacement update of `dateNeeded`/`notes`/`lines` (explicit `null` clears a field); `siteWarehouseId` is immutable and not part of the body. 422 once status is `PARTIALLY_FULFILLED` or `FULFILLED`
+- `DELETE /api/inventory/material-requests/{id}` — delete a request, same lock condition as `PUT` (422 once status is `PARTIALLY_FULFILLED` or `FULFILLED`). A request is persisted as `SUBMITTED` from creation — there is no separate draft/submit step — so this is what makes a mistaken or no-longer-needed request removable. Never touches an unsubmitted `TransferBatch`'s `sourceMaterialRequestId` — the batch is just left with no request behind it
 - `GET /api/inventory/material-requests/{id}` — get by id
 - `GET /api/inventory/material-requests` — paginated list, filterable by `siteWarehouseId`/`status`
 

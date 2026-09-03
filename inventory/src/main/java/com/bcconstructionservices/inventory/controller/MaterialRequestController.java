@@ -23,6 +23,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -30,6 +31,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -105,6 +107,34 @@ public class MaterialRequestController {
             @PathVariable Long id,
             @Valid @RequestBody MaterialRequestUpdateRequest request) {
         return ResponseEntity.ok(materialRequestService.update(id, request));
+    }
+
+    @DeleteMapping("/{id}")
+    @Operation(
+            summary = "Delete a material request",
+            description = "Only a request that hasn't been (even partially) fulfilled yet can be deleted (422 "
+                    + "otherwise) — the same lock condition as PUT /{id}: rejected once status is "
+                    + "PARTIALLY_FULFILLED or FULFILLED, since a submitted transfer batch has already moved real "
+                    + "stock against the request by then. A request that's merely SUBMITTED (its actual initial "
+                    + "status — creation never leaves one at DRAFT) can still be deleted. If an unsubmitted "
+                    + "TransferBatch references this request via sourceMaterialRequestId, deleting it does NOT "
+                    + "touch that batch — it's simply left with no material request behind it, same as if this "
+                    + "request had never been created."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "204", description = "Material request deleted"),
+            @ApiResponse(responseCode = "404", description = "Material request not found",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "422", description = "The request has already been at least partially "
+                    + "fulfilled and cannot be deleted",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasRole('MATERIAL_REQUEST_DELETE')")
+    public void delete(
+            @Parameter(description = "Identifier of the material request to delete", example = "14")
+            @PathVariable Long id) {
+        materialRequestService.delete(id);
     }
 
     @GetMapping("/{id}")
