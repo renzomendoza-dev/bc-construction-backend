@@ -89,6 +89,7 @@ All endpoints return `application/json` and validate request bodies with `@Valid
 - `PUT /api/purchase-orders/{id}` — full-replacement update of `notes`/`lines`, `DRAFT` only (422 otherwise)
 - `POST /api/purchase-orders/{id}/submit` — `DRAFT` → `SUBMITTED`, `DRAFT` only (422 otherwise); locks line items from this point
 - `POST /api/purchase-orders/{id}/close` — manually terminate the order regardless of how much has been received (422 if already `RECEIVED`/`CLOSED`)
+- `DELETE /api/purchase-orders/{id}` — delete a `DRAFT` order (422 otherwise). Independently rejected with 409 if any `PurchaseReceipt` already references it via `purchaseOrderId` — `createPurchaseReceipt` allows linking a receipt to a `DRAFT` order, so a still-`DRAFT` order can legitimately already have receipt history against it
 - `GET /api/purchase-orders/{id}` — get by id, including per-line `receivedQuantity`
 - `GET /api/purchase-orders` — paginated list, filterable by `supplierId`/`status`
 - `GET /api/purchase-orders/suggestions?supplierId=` — suggested line items for a new order against a supplier; see "Purchase order suggestions" below

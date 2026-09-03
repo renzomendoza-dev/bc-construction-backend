@@ -6,6 +6,8 @@ import com.bcconstructionservices.inventory.dto.PurchaseOrderResponse;
 import com.bcconstructionservices.inventory.dto.PurchaseOrderSuggestionsResponse;
 import com.bcconstructionservices.inventory.dto.PurchaseOrderUpdateRequest;
 import com.bcconstructionservices.inventory.entity.PurchaseOrderStatus;
+import com.bcconstructionservices.inventory.exception.PurchaseOrderHasReceiptsException;
+import com.bcconstructionservices.inventory.exception.PurchaseOrderNotDeletableException;
 import com.bcconstructionservices.inventory.exception.PurchaseOrderNotEditableException;
 import com.bcconstructionservices.inventory.exception.PurchaseOrderNotOpenException;
 import com.bcconstructionservices.inventory.exception.ResourceNotFoundException;
@@ -27,8 +29,10 @@ import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -295,6 +299,73 @@ class PurchaseOrderControllerTest {
             mockMvc.perform(post("/api/purchase-orders/{id}/close", 12L)
                             .with(authenticatedJwt()))
                     .andExpect(status().isForbidden());
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // DELETE /api/purchase-orders/{id}
+    // ---------------------------------------------------------------
+
+    @Nested
+    class DeleteTests {
+
+        @Test
+        void shouldReturn204WhenOrderIsDraft() throws Exception {
+            mockMvc.perform(delete("/api/purchase-orders/{id}", 12L)
+                            .with(authenticatedJwt("PURCHASE_ORDER_DELETE")))
+                    .andExpect(status().isNoContent());
+        }
+
+        @Test
+        void shouldReturn404WhenOrderNotFound() throws Exception {
+            doThrow(new ResourceNotFoundException("PurchaseOrder", 999L))
+                    .when(purchaseOrderService).delete(999L);
+
+            mockMvc.perform(delete("/api/purchase-orders/{id}", 999L)
+                            .with(authenticatedJwt("PURCHASE_ORDER_DELETE")))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        void shouldReturn422WhenOrderIsNotDraft() throws Exception {
+            doThrow(new PurchaseOrderNotDeletableException(12L, PurchaseOrderStatus.SUBMITTED))
+                    .when(purchaseOrderService).delete(12L);
+
+            mockMvc.perform(delete("/api/purchase-orders/{id}", 12L)
+                            .with(authenticatedJwt("PURCHASE_ORDER_DELETE")))
+                    .andExpect(status().isUnprocessableEntity());
+        }
+
+        @Test
+        void shouldReturn409WhenOrderHasReceiptsReferencingIt() throws Exception {
+            doThrow(new PurchaseOrderHasReceiptsException(12L))
+                    .when(purchaseOrderService).delete(12L);
+
+            mockMvc.perform(delete("/api/purchase-orders/{id}", 12L)
+                            .with(authenticatedJwt("PURCHASE_ORDER_DELETE")))
+                    .andExpect(status().isConflict());
+        }
+
+        @Test
+        void shouldReturn403WhenCallerLacksDeletePermission() throws Exception {
+            mockMvc.perform(delete("/api/purchase-orders/{id}", 12L)
+                            .with(authenticatedJwt()))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        void shouldReturn403WhenCallerHasOnlyClosePermissionNotDelete() throws Exception {
+            // PURCHASE_ORDER_CLOSE must not be sufficient for this endpoint -
+            // close and delete are deliberately separate permissions.
+            mockMvc.perform(delete("/api/purchase-orders/{id}", 12L)
+                            .with(authenticatedJwt("PURCHASE_ORDER_CLOSE")))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        void shouldReturn401WhenUnauthenticated() throws Exception {
+            mockMvc.perform(delete("/api/purchase-orders/{id}", 12L))
+                    .andExpect(status().isUnauthorized());
         }
     }
 

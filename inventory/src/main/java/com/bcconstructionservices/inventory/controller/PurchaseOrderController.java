@@ -24,6 +24,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -31,6 +32,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -141,6 +143,33 @@ public class PurchaseOrderController {
             @Parameter(description = "Identifier of the purchase order to close", example = "12")
             @PathVariable Long id) {
         return ResponseEntity.ok(purchaseOrderService.close(id));
+    }
+
+    @DeleteMapping("/{id}")
+    @Operation(
+            summary = "Delete a draft purchase order",
+            description = "Only a DRAFT order can be deleted (422 otherwise) — anything past that has already "
+                    + "been submitted to the supplier. Independently rejected with 409 if one or more "
+                    + "PurchaseReceipts already reference this order via purchaseOrderId — createPurchaseReceipt "
+                    + "allows linking a receipt to a DRAFT order (not just an already-submitted one), so a "
+                    + "still-DRAFT order can legitimately already have receipt history against it."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "204", description = "Purchase order deleted"),
+            @ApiResponse(responseCode = "404", description = "Purchase order not found",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "409", description = "One or more PurchaseReceipts already reference "
+                    + "this order",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "422", description = "The order is not DRAFT and cannot be deleted",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasRole('PURCHASE_ORDER_DELETE')")
+    public void delete(
+            @Parameter(description = "Identifier of the purchase order to delete", example = "12")
+            @PathVariable Long id) {
+        purchaseOrderService.delete(id);
     }
 
     @GetMapping("/{id}")

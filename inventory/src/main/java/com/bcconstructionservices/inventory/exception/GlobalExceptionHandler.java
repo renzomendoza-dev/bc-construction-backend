@@ -75,6 +75,12 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(MaterialRequestNotDeletableException.class)
+    public ResponseEntity<ErrorResponse> handleMaterialRequestNotDeletable(
+            MaterialRequestNotDeletableException ex, HttpServletRequest request) {
+        return buildResponse(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), request);
+    }
+
     @ExceptionHandler(TransferBatchNotAwaitingPurchaseException.class)
     public ResponseEntity<ErrorResponse> handleTransferBatchNotAwaitingPurchase(
             TransferBatchNotAwaitingPurchaseException ex, HttpServletRequest request) {
@@ -97,6 +103,18 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handlePurchaseOrderNotOpen(
             PurchaseOrderNotOpenException ex, HttpServletRequest request) {
         return buildResponse(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(PurchaseOrderNotDeletableException.class)
+    public ResponseEntity<ErrorResponse> handlePurchaseOrderNotDeletable(
+            PurchaseOrderNotDeletableException ex, HttpServletRequest request) {
+        return buildResponse(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(PurchaseOrderHasReceiptsException.class)
+    public ResponseEntity<ErrorResponse> handlePurchaseOrderHasReceipts(
+            PurchaseOrderHasReceiptsException ex, HttpServletRequest request) {
+        return buildResponse(HttpStatus.CONFLICT, ex.getMessage(), request);
     }
 
     /**

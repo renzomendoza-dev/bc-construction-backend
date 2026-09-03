@@ -24,6 +24,8 @@ import com.bcconstructionservices.inventory.entity.TransferBatch;
 import com.bcconstructionservices.inventory.entity.TransferBatchStatus;
 import com.bcconstructionservices.inventory.entity.TransferLineItem;
 import com.bcconstructionservices.inventory.entity.Warehouse;
+import com.bcconstructionservices.inventory.exception.PurchaseOrderHasReceiptsException;
+import com.bcconstructionservices.inventory.exception.PurchaseOrderNotDeletableException;
 import com.bcconstructionservices.inventory.exception.PurchaseOrderNotEditableException;
 import com.bcconstructionservices.inventory.exception.PurchaseOrderNotOpenException;
 import com.bcconstructionservices.inventory.exception.ResourceNotFoundException;
@@ -37,6 +39,7 @@ import com.bcconstructionservices.inventory.repository.MaterialRequestRepository
 import com.bcconstructionservices.inventory.repository.PurchaseOrderLineRepository;
 import com.bcconstructionservices.inventory.repository.PurchaseOrderRepository;
 import com.bcconstructionservices.inventory.repository.PurchaseReceiptLineRepository;
+import com.bcconstructionservices.inventory.repository.PurchaseReceiptRepository;
 import com.bcconstructionservices.inventory.repository.SupplierRepository;
 import com.bcconstructionservices.inventory.repository.TransferBatchRepository;
 import com.bcconstructionservices.inventory.repository.TransferLineItemRepository;
@@ -96,6 +99,8 @@ class PurchaseOrderServiceTest {
     private MaterialRequestLineItemRepository materialRequestLineItemRepository;
     @Mock
     private PurchaseReceiptLineRepository purchaseReceiptLineRepository;
+    @Mock
+    private PurchaseReceiptRepository purchaseReceiptRepository;
     @Spy
     private PurchaseOrderMapperImpl purchaseOrderMapper = new PurchaseOrderMapperImpl();
     @Mock
@@ -371,6 +376,66 @@ class PurchaseOrderServiceTest {
                     .isThrownBy(() -> purchaseOrderService.close(ORDER_ID));
 
             verify(purchaseOrderRepository, never()).save(any());
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // delete
+    // ---------------------------------------------------------------
+
+    @Nested
+    class DeleteTests {
+
+        @Test
+        void shouldDeleteOrderWhenDraftAndNoReceiptsReferenceIt() {
+            PurchaseOrder order = buildOrder(PurchaseOrderStatus.DRAFT, List.of());
+            when(purchaseOrderRepository.findById(ORDER_ID)).thenReturn(Optional.of(order));
+            when(purchaseReceiptRepository.existsByPurchaseOrderId(ORDER_ID)).thenReturn(false);
+
+            purchaseOrderService.delete(ORDER_ID);
+
+            verify(purchaseOrderRepository).delete(order);
+        }
+
+        @Test
+        void shouldThrowResourceNotFoundExceptionWhenOrderDoesNotExist() {
+            when(purchaseOrderRepository.findById(ORDER_ID)).thenReturn(Optional.empty());
+
+            assertThatExceptionOfType(ResourceNotFoundException.class)
+                    .isThrownBy(() -> purchaseOrderService.delete(ORDER_ID));
+
+            verify(purchaseOrderRepository, never()).delete(any());
+        }
+
+        @Test
+        void shouldThrowPurchaseOrderNotDeletableExceptionWhenNotDraft() {
+            PurchaseOrder order = buildOrder(PurchaseOrderStatus.SUBMITTED, List.of());
+            when(purchaseOrderRepository.findById(ORDER_ID)).thenReturn(Optional.of(order));
+
+            assertThatExceptionOfType(PurchaseOrderNotDeletableException.class)
+                    .isThrownBy(() -> purchaseOrderService.delete(ORDER_ID))
+                    .satisfies(ex -> {
+                        assertThat(ex.getPurchaseOrderId()).isEqualTo(ORDER_ID);
+                        assertThat(ex.getStatus()).isEqualTo(PurchaseOrderStatus.SUBMITTED);
+                    });
+
+            verify(purchaseOrderRepository, never()).delete(any());
+            verify(purchaseReceiptRepository, never()).existsByPurchaseOrderId(any());
+        }
+
+        @Test
+        void shouldThrowPurchaseOrderHasReceiptsExceptionWhenAReceiptReferencesADraftOrder() {
+            // createPurchaseReceipt() allows linking to a DRAFT order (only
+            // RECEIVED/CLOSED are rejected), so this combination is real.
+            PurchaseOrder order = buildOrder(PurchaseOrderStatus.DRAFT, List.of());
+            when(purchaseOrderRepository.findById(ORDER_ID)).thenReturn(Optional.of(order));
+            when(purchaseReceiptRepository.existsByPurchaseOrderId(ORDER_ID)).thenReturn(true);
+
+            assertThatExceptionOfType(PurchaseOrderHasReceiptsException.class)
+                    .isThrownBy(() -> purchaseOrderService.delete(ORDER_ID))
+                    .satisfies(ex -> assertThat(ex.getPurchaseOrderId()).isEqualTo(ORDER_ID));
+
+            verify(purchaseOrderRepository, never()).delete(any());
         }
     }
 

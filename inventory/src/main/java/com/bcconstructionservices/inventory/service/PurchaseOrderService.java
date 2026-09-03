@@ -22,6 +22,8 @@ import com.bcconstructionservices.inventory.entity.Supplier;
 import com.bcconstructionservices.inventory.entity.TransferBatch;
 import com.bcconstructionservices.inventory.entity.TransferBatchStatus;
 import com.bcconstructionservices.inventory.entity.TransferLineItem;
+import com.bcconstructionservices.inventory.exception.PurchaseOrderHasReceiptsException;
+import com.bcconstructionservices.inventory.exception.PurchaseOrderNotDeletableException;
 import com.bcconstructionservices.inventory.exception.PurchaseOrderNotEditableException;
 import com.bcconstructionservices.inventory.exception.PurchaseOrderNotOpenException;
 import com.bcconstructionservices.inventory.exception.ResourceNotFoundException;
@@ -34,6 +36,7 @@ import com.bcconstructionservices.inventory.repository.MaterialRequestRepository
 import com.bcconstructionservices.inventory.repository.PurchaseOrderLineRepository;
 import com.bcconstructionservices.inventory.repository.PurchaseOrderRepository;
 import com.bcconstructionservices.inventory.repository.PurchaseReceiptLineRepository;
+import com.bcconstructionservices.inventory.repository.PurchaseReceiptRepository;
 import com.bcconstructionservices.inventory.repository.SupplierRepository;
 import com.bcconstructionservices.inventory.repository.TransferBatchRepository;
 import com.bcconstructionservices.inventory.repository.TransferLineItemRepository;
@@ -75,6 +78,7 @@ public class PurchaseOrderService {
     private final MaterialRequestRepository materialRequestRepository;
     private final MaterialRequestLineItemRepository materialRequestLineItemRepository;
     private final PurchaseReceiptLineRepository purchaseReceiptLineRepository;
+    private final PurchaseReceiptRepository purchaseReceiptRepository;
     private final PurchaseOrderMapper purchaseOrderMapper;
     // Not called directly below: cascade=ALL + orphanRemoval on PurchaseOrder.lines
     // means saving the parent is enough. Kept as an injected field per this
@@ -162,6 +166,33 @@ public class PurchaseOrderService {
         order.setStatus(PurchaseOrderStatus.CLOSED);
         PurchaseOrder saved = purchaseOrderRepository.save(order);
         return toResponseWithReceivedQuantities(saved);
+    }
+
+    /**
+     * Only a DRAFT order can be deleted (422 otherwise) — anything past that
+     * has been submitted to the supplier. Independently, also rejected (409)
+     * if any PurchaseReceipt already references this order via
+     * purchaseOrderId: createPurchaseReceipt() allows linking to a DRAFT
+     * order (see its own inline comment — only RECEIVED/CLOSED are
+     * rejected), and purchase_receipt.purchase_order_id is a real DB-level
+     * FK, so this check exists to turn what would otherwise be a raw
+     * constraint-violation 500 into a clean, documented response. Line items
+     * cascade-delete via PurchaseOrder.lines' orphanRemoval.
+     */
+    @Transactional
+    public void delete(Long purchaseOrderId) {
+        PurchaseOrder order = purchaseOrderRepository.findById(purchaseOrderId)
+                .orElseThrow(() -> new ResourceNotFoundException("PurchaseOrder", purchaseOrderId));
+
+        if (order.getStatus() != PurchaseOrderStatus.DRAFT) {
+            throw new PurchaseOrderNotDeletableException(purchaseOrderId, order.getStatus());
+        }
+
+        if (purchaseReceiptRepository.existsByPurchaseOrderId(purchaseOrderId)) {
+            throw new PurchaseOrderHasReceiptsException(purchaseOrderId);
+        }
+
+        purchaseOrderRepository.delete(order);
     }
 
     @Transactional(readOnly = true)

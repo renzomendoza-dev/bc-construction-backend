@@ -13,6 +13,14 @@ import java.util.Optional;
 public interface PurchaseReceiptRepository extends JpaRepository<PurchaseReceipt, Long> {
 
     /**
+     * Used by PurchaseOrderService.delete to reject deleting an order that
+     * one or more receipts already reference — createPurchaseReceipt allows
+     * linking to a DRAFT order, so this can be true even for an
+     * otherwise-deletable order.
+     */
+    boolean existsByPurchaseOrderId(Long purchaseOrderId);
+
+    /**
      * Fetches a single receipt with its supplier and warehouse eagerly loaded.
      * Lines are intentionally not join-fetched here (a to-many fetch alongside
      * two to-one fetches risks a cartesian product); accessing getLines() after
