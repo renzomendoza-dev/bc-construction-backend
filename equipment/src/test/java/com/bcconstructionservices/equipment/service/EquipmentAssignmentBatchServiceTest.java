@@ -69,6 +69,8 @@ class EquipmentAssignmentBatchServiceTest {
     private UserRepository userRepository;
     @Mock
     private EquipmentService equipmentService;
+    @Mock
+    private org.springframework.data.domain.AuditorAware<Long> auditorAware;
     @Spy
     private EquipmentAssignmentBatchMapperImpl equipmentAssignmentBatchMapper = new EquipmentAssignmentBatchMapperImpl();
 

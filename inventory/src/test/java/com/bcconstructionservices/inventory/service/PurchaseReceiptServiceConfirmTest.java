@@ -127,6 +127,8 @@ class PurchaseReceiptServiceConfirmTest {
     private PurchaseReceiptService purchaseReceiptService;
     @Mock
     private CurrentUserService currentUserService;
+    @Mock
+    private org.springframework.data.domain.AuditorAware<Long> auditorAware;
 
     private Supplier activeSupplier;
     private Warehouse activeWarehouse;

@@ -129,6 +129,40 @@ against the order, every time, via a repository query scoped to the parent id ra
 just-processed child's lines. Do this (query-scoped-to-parent, not lines-just-processed) for any
 new entity in this shape.
 
+## Reentrant auto-flush: audited entity + cascade=ALL collection + a later query in the same method
+
+A real, reproducible Hibernate bug (not a guess — reproduced locally by adding
+`@EnableJpaAuditing` plus a stub `AuditorAware` to a `@DataJpaTest`, and it matched a production
+stack trace exactly): if a method (a) mutates a field on an entity that is
+`@EntityListeners(AuditingEntityListener.class)`-audited **and** has a `cascade=ALL` `@OneToMany`
+collection (e.g. `PurchaseOrder.lines`, `PurchaseReceipt.lines`, `EquipmentAssignmentBatch.lines`),
+then (b) triggers **any** further repository query before the transaction ends — the eventual
+flush fires that entity's `@PreUpdate` callback, which calls `AuditorAwareImpl.getCurrentAuditor()`
+(`app/.../config/AuditorAwareImpl.java`). When its per-request cache is cold, that method queries
+`UserRepository`, and *that* query's own auto-flush check reentrantly re-enters the flush already
+in progress for the same entity — Hibernate's flush isn't reentrant-safe for this, and throws
+`HibernateException: Found shared references to a collection: <Entity>.<collection>` (surfaces as
+a 500). This reproduces on **any** flush of the dirty entity while the cache is cold — reordering
+statements inside the method does not help; an explicit early `flush()` throws the exact same way.
+
+Only entities updated this way are at risk — a fresh `INSERT` (this codebase's ID strategy is
+always `GenerationType.IDENTITY`) runs synchronously inside `save()`/`persist()`, so `createDraft()`-
+style methods never hit this regardless of what runs afterward.
+
+**The fix**: inject `AuditorAware<Long>` (the plain `org.springframework.data.domain` interface —
+depending on it does not create a dependency on the `app` module; Spring wires in whatever bean
+implements it) and call `auditorAware.getCurrentAuditor();` once, discarding the result, as the
+first thing before the entity is mutated — this pre-warms the same per-request cache
+`AuditorAwareImpl` already has, so the later reentrant call is a cache hit, not a query. Already
+applied to `PurchaseOrderService.update/submit/close`, `PurchaseReceiptService.confirmPurchaseReceipt`,
+and `EquipmentAssignmentBatchService.submit` — see `submit()`'s javadoc in `PurchaseOrderService`
+for the full root-cause writeup, and `PurchaseOrderServiceIntegrationTest` for a real repro.
+`CurrentUserService.getCurrentUserId()` does **not** help here — it queries `UserRepository`
+directly with no caching of its own, unlike `AuditorAwareImpl`.
+
+When adding a new method that updates one of these three (or any future) audited+cascade=ALL
+entity and then queries again afterward, apply the same one-line warm-up call.
+
 ## Testing
 
 - Service-layer: Mockito unit tests (`@ExtendWith(MockitoExtension.class)`), manual per-test

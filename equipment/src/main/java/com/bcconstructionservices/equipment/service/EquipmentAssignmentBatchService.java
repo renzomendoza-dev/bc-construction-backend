@@ -21,6 +21,7 @@ import com.bcconstructionservices.inventory.entity.WarehouseType;
 import com.bcconstructionservices.inventory.repository.WarehouseRepository;
 import com.bcconstructionservices.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.AuditorAware;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -58,6 +59,11 @@ public class EquipmentAssignmentBatchService {
     private final UserRepository userRepository;
     private final EquipmentService equipmentService;
     private final EquipmentAssignmentBatchMapper equipmentAssignmentBatchMapper;
+    // Injected purely to pre-warm its per-request auditor cache early in
+    // submit(), before EquipmentAssignmentBatch becomes dirty — see that
+    // method's javadoc, and PurchaseOrderService.submit()'s, for the real
+    // Hibernate bug this works around.
+    private final AuditorAware<Long> auditorAware;
 
     public EquipmentAssignmentBatchResponse createDraft(EquipmentAssignmentBatchCreateRequest request) {
         Warehouse destinationWarehouse = warehouseRepository.findById(request.getDestinationWarehouseId())
@@ -122,6 +128,22 @@ public class EquipmentAssignmentBatchService {
      * same-warehouse-transfer validation (400 EquipmentAlreadyAtWarehouseException),
      * and destination-warehouse-type validation all live in EquipmentService,
      * not here.
+     *
+     * <p><b>{@code auditorAware.getCurrentAuditor()} below, called before
+     * {@code batch}'s status is mutated, is load-bearing, not incidental</b>
+     * — same reentrant-auto-flush work-around as
+     * {@link com.bcconstructionservices.inventory.service.PurchaseOrderService#submit},
+     * whose javadoc explains the root cause in full. Short version:
+     * {@code EquipmentAssignmentBatch} is
+     * {@code @EntityListeners(AuditingEntityListener.class)}-audited with a
+     * {@code cascade=ALL} {@code lines} collection; once this method mutates
+     * it and then triggers ANY further query in the same transaction (here:
+     * every {@code equipmentService.checkOut}/{@code checkIn} call in the
+     * loop below), the eventual flush fires this entity's {@code @PreUpdate}
+     * callback, which calls {@code AuditorAwareImpl.getCurrentAuditor()} —
+     * and if that per-request cache is cold, its own query reentrantly
+     * re-enters the still-in-progress flush, producing Hibernate's "Found
+     * shared references to a collection: EquipmentAssignmentBatch.lines" 500.
      */
     public EquipmentAssignmentBatchResponse submit(Long batchId) {
         EquipmentAssignmentBatch batch = equipmentAssignmentBatchRepository.findById(batchId)
@@ -133,6 +155,7 @@ public class EquipmentAssignmentBatchService {
                     "Equipment assignment batch " + batchId + " has no lines to submit");
         }
 
+        auditorAware.getCurrentAuditor();
         batch.setStatus(EquipmentAssignmentBatchStatus.SUBMITTED);
 
         boolean hasHolder = batch.getHolderId() != null;

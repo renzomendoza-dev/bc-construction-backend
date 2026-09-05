@@ -41,6 +41,7 @@ import com.bcconstructionservices.inventory.repository.SupplierRepository;
 import com.bcconstructionservices.inventory.repository.TransferBatchRepository;
 import com.bcconstructionservices.inventory.repository.TransferLineItemRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.AuditorAware;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -86,6 +87,12 @@ public class PurchaseOrderService {
     // even when a service ends up not calling it directly (see
     // PurchaseReceiptService's own purchaseReceiptLineMapper field).
     private final PurchaseOrderLineRepository purchaseOrderLineRepository;
+    // Injected purely to pre-warm its per-request auditor cache early in
+    // update()/submit()/close() — see those methods' javadoc for why. The
+    // concrete bean (AuditorAwareImpl, app module) is wired in by Spring at
+    // runtime via @EnableJpaAuditing; this module only depends on the
+    // spring-data-commons interface, not on the app module.
+    private final AuditorAware<Long> auditorAware;
 
     @Transactional
     public PurchaseOrderResponse createDraft(PurchaseOrderCreateRequest request) {
@@ -108,6 +115,11 @@ public class PurchaseOrderService {
      * MaterialRequestService.update's shape exactly: notes copied as given
      * (including null, clearing it), lines entirely cleared and rebuilt via
      * orphanRemoval.
+     *
+     * <p>{@code auditorAware.getCurrentAuditor()} is called here, before any
+     * field on {@code order} is mutated, purely to pre-warm
+     * AuditorAwareImpl's per-request cache — see its own javadoc and
+     * {@link #submit}'s for the real Hibernate bug this works around.
      */
     @Transactional
     public PurchaseOrderResponse update(Long purchaseOrderId, PurchaseOrderUpdateRequest request) {
@@ -118,6 +130,7 @@ public class PurchaseOrderService {
             throw new PurchaseOrderNotEditableException(purchaseOrderId, order.getStatus());
         }
 
+        auditorAware.getCurrentAuditor();
         purchaseOrderMapper.updateEntityFromRequest(request, order);
 
         order.getLines().clear();
@@ -131,6 +144,37 @@ public class PurchaseOrderService {
      * DRAFT -&gt; SUBMITTED. Locks line items from this point on — once a
      * supplier has the order, changing quantities without telling them is
      * misleading, so update() rejects anything past DRAFT too.
+     *
+     * <p>Deliberately no explicit {@code purchaseOrderRepository.save(order)}
+     * here: {@code order} is already a managed entity within this
+     * transaction, so mutating its status is enough — JPA dirty-checking
+     * persists the change at flush/commit without an explicit save.
+     *
+     * <p><b>{@code auditorAware.getCurrentAuditor()} below, called before the
+     * status mutation, is load-bearing, not incidental</b> — it works around
+     * a real Hibernate bug that used to 500 this endpoint with "Found shared
+     * references to a collection: PurchaseOrder.lines". Root cause: this
+     * entity's {@code @EntityListeners(AuditingEntityListener.class)} fires
+     * a {@code @PreUpdate} callback once {@code order} is dirty and actually
+     * gets flushed (updates are always deferred to the next flush, unlike
+     * this entity's {@code GenerationType.IDENTITY} inserts, which run
+     * synchronously inside {@code save()} — that's why {@link #createDraft}
+     * never hits this). That callback calls {@code AuditorAwareImpl.getCurrentAuditor()},
+     * which — per its own javadoc — queries {@code UserRepository} when its
+     * per-request cache is cold, and that query's own auto-flush check
+     * reentrantly re-enters the flush that's already in progress for the
+     * very same {@code order}, before the outer flush has finished
+     * processing its {@code lines} collection. Hibernate's flush isn't
+     * reentrant-safe for this, and throws. It reproduces on ANY flush of a
+     * dirty, audited {@code order} while the auditor cache is cold —
+     * reordering this method's own statements does not help (confirmed by
+     * testing an explicit early flush here — it still throws) — only
+     * warming the cache *before* {@code order} becomes dirty avoids the
+     * reentrant query in the first place. See
+     * {@code PurchaseOrderServiceIntegrationTest} for a real reproduction
+     * (with a stub {@code AuditorAware} that performs a fresh query, exactly
+     * like {@code AuditorAwareImpl}) and {@link #close} / {@link #update},
+     * which need the identical work-around for the identical reason.
      */
     @Transactional
     public PurchaseOrderResponse submit(Long purchaseOrderId) {
@@ -141,9 +185,9 @@ public class PurchaseOrderService {
             throw new PurchaseOrderNotEditableException(purchaseOrderId, order.getStatus());
         }
 
+        auditorAware.getCurrentAuditor();
         order.setStatus(PurchaseOrderStatus.SUBMITTED);
-        PurchaseOrder saved = purchaseOrderRepository.save(order);
-        return toResponseWithReceivedQuantities(saved);
+        return toResponseWithReceivedQuantities(order);
     }
 
     /**
@@ -153,6 +197,9 @@ public class PurchaseOrderService {
      * status except RECEIVED/CLOSED (422), which are already terminal.
      * Deliberately a distinct terminal state from RECEIVED so "fully
      * delivered" and "abandoned short" aren't conflated.
+     *
+     * <p>No explicit save(), and the same early {@code auditorAware.getCurrentAuditor()}
+     * warm-up call, for the identical reason — see {@link #submit}'s javadoc.
      */
     @Transactional
     public PurchaseOrderResponse close(Long purchaseOrderId) {
@@ -163,9 +210,9 @@ public class PurchaseOrderService {
             throw new PurchaseOrderNotOpenException(purchaseOrderId, order.getStatus());
         }
 
+        auditorAware.getCurrentAuditor();
         order.setStatus(PurchaseOrderStatus.CLOSED);
-        PurchaseOrder saved = purchaseOrderRepository.save(order);
-        return toResponseWithReceivedQuantities(saved);
+        return toResponseWithReceivedQuantities(order);
     }
 
     /**

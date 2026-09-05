@@ -10,6 +10,7 @@ import com.bcconstructionservices.inventory.mapper.PurchaseReceiptLineMapper;
 import com.bcconstructionservices.inventory.mapper.PurchaseReceiptMapper;
 import com.bcconstructionservices.inventory.repository.*;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.AuditorAware;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -48,6 +49,13 @@ public class PurchaseReceiptService {
     private final PurchaseReceiptMapper purchaseReceiptMapper;
     private final FileStorageService fileStorageService;
     private final CurrentUserService currentUserService;
+    // Injected purely to pre-warm its per-request auditor cache early in
+    // confirmPurchaseReceipt(), before PurchaseReceipt becomes dirty — see
+    // that method's javadoc, and PurchaseOrderService.submit()'s, for the
+    // real Hibernate bug this works around. Note: currentUserService (above)
+    // does NOT share this cache — it queries UserRepository directly, with
+    // no caching of its own, so calling it does not help here.
+    private final AuditorAware<Long> auditorAware;
     // Not called directly below: PurchaseReceiptMapper already composes with this
     // (uses = PurchaseReceiptLineMapper.class) to map the `lines` collection inside
     // purchaseReceiptMapper.toResponse(...), and getPurchaseHistoryForItem builds
@@ -151,6 +159,25 @@ public class PurchaseReceiptService {
      * by refreshing that item+supplier's ItemSupplier.unitCost. The whole method is
      * one transaction, so a failure on any line (e.g. an inactive item) rolls back
      * every adjustment and cost update already applied earlier in the loop.
+     *
+     * <p><b>{@code auditorAware.getCurrentAuditor()} below, called before this
+     * receipt's own fields are mutated, is load-bearing, not incidental</b> —
+     * same reentrant-auto-flush work-around as
+     * {@link PurchaseOrderService#submit}, whose javadoc explains the root
+     * cause in full. Short version: {@code PurchaseReceipt} is
+     * {@code @EntityListeners(AuditingEntityListener.class)}-audited with a
+     * {@code cascade=ALL} {@code lines} collection; once this method mutates
+     * it (confirmedBy/confirmed/confirmedAt) and then triggers ANY further
+     * query in the same transaction (here: {@code unblockLinkedTransferBatch}
+     * or {@code purchaseOrderService.updateStatusFromReceipts}), the eventual
+     * flush fires this entity's {@code @PreUpdate} callback, which calls
+     * {@code AuditorAwareImpl.getCurrentAuditor()} — and if that per-request
+     * cache is cold, its own query reentrantly re-enters the still-in-progress
+     * flush, producing Hibernate's "Found shared references to a collection:
+     * PurchaseReceipt.lines" 500. {@code currentUserService.getCurrentUserId()}
+     * a few lines below does NOT prevent this — it queries UserRepository
+     * directly with no caching of its own, unlike AuditorAwareImpl's
+     * per-request cache.
      */
     @Transactional
     public PurchaseReceiptResponse confirmPurchaseReceipt(Long receiptId) {
@@ -163,6 +190,8 @@ public class PurchaseReceiptService {
         if (receipt.getLines() == null || receipt.getLines().isEmpty()) {
             throw new ReceiptProcessingException(receiptId, "receipt has no lines to confirm");
         }
+
+        auditorAware.getCurrentAuditor();
 
         for (PurchaseReceiptLine line : receipt.getLines()) {
             StockAdjustmentRequest adjustment = StockAdjustmentRequest.builder()

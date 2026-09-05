@@ -105,6 +105,8 @@ class PurchaseOrderServiceTest {
     private PurchaseOrderMapperImpl purchaseOrderMapper = new PurchaseOrderMapperImpl();
     @Mock
     private PurchaseOrderLineRepository purchaseOrderLineRepository;
+    @Mock
+    private org.springframework.data.domain.AuditorAware<Long> auditorAware;
 
     @InjectMocks
     private PurchaseOrderService purchaseOrderService;
@@ -304,13 +306,15 @@ class PurchaseOrderServiceTest {
         void shouldTransitionDraftToSubmitted() {
             PurchaseOrder order = buildOrder(PurchaseOrderStatus.DRAFT, List.of());
             when(purchaseOrderRepository.findByIdWithSupplier(ORDER_ID)).thenReturn(Optional.of(order));
-            givenSavesEchoTheirArgument();
             givenNoConfirmedReceiptsAgainst(ORDER_ID);
 
             purchaseOrderService.submit(ORDER_ID);
 
-            PurchaseOrder saved = captureSavedOrder();
-            assertThat(saved.getStatus()).isEqualTo(PurchaseOrderStatus.SUBMITTED);
+            // order is mutated in place and persisted via dirty-checking, not
+            // an explicit save() — see submit()'s own javadoc for why an
+            // explicit save() here was the cause of a real Hibernate bug.
+            assertThat(order.getStatus()).isEqualTo(PurchaseOrderStatus.SUBMITTED);
+            verify(purchaseOrderRepository, never()).save(any());
         }
 
         @Test
@@ -336,24 +340,27 @@ class PurchaseOrderServiceTest {
         void shouldCloseADraftOrder() {
             PurchaseOrder order = buildOrder(PurchaseOrderStatus.DRAFT, List.of());
             when(purchaseOrderRepository.findByIdWithSupplier(ORDER_ID)).thenReturn(Optional.of(order));
-            givenSavesEchoTheirArgument();
             givenNoConfirmedReceiptsAgainst(ORDER_ID);
 
             purchaseOrderService.close(ORDER_ID);
 
-            assertThat(captureSavedOrder().getStatus()).isEqualTo(PurchaseOrderStatus.CLOSED);
+            // order is mutated in place and persisted via dirty-checking, not
+            // an explicit save() — see submit()'s javadoc (close() follows
+            // the same reasoning) for why an explicit save() here was the
+            // cause of a real Hibernate bug.
+            assertThat(order.getStatus()).isEqualTo(PurchaseOrderStatus.CLOSED);
+            verify(purchaseOrderRepository, never()).save(any());
         }
 
         @Test
         void shouldClosseAPartiallyReceivedOrder() {
             PurchaseOrder order = buildOrder(PurchaseOrderStatus.PARTIALLY_RECEIVED, List.of());
             when(purchaseOrderRepository.findByIdWithSupplier(ORDER_ID)).thenReturn(Optional.of(order));
-            givenSavesEchoTheirArgument();
             givenNoConfirmedReceiptsAgainst(ORDER_ID);
 
             purchaseOrderService.close(ORDER_ID);
 
-            assertThat(captureSavedOrder().getStatus()).isEqualTo(PurchaseOrderStatus.CLOSED);
+            assertThat(order.getStatus()).isEqualTo(PurchaseOrderStatus.CLOSED);
         }
 
         @Test
