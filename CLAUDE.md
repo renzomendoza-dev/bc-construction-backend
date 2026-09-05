@@ -98,9 +98,15 @@ replacing) the existing single-item endpoints:
 
 - `DRAFT` → `SUBMITTED` → `COMPLETED` status lifecycle.
 - `submit()` is one transaction: if any line fails, nothing is applied and the batch stays in
-  its prior state. It delegates each line to the same service method the single-item endpoint
-  already uses (`InventoryService.transferStock`, `EquipmentService.checkOut`/`checkIn`) rather
-  than reimplementing the line-level logic.
+  its prior state. It delegates each line to the service method that owns the underlying
+  mutation rather than reimplementing the line-level logic — `EquipmentService.checkOut`/
+  `checkIn` (the same method the single-item endpoint uses) for `EquipmentAssignmentBatch`, but
+  a warehouse-total variant for `TransferBatch`: `InventoryService.transferWarehouseStock`, not
+  the single-location `transferStock` the single-item `POST /api/inventory/transfer` endpoint
+  uses. A `TransferBatch` line only ever specifies warehouses (no `locationId` field exists on
+  it), so "does the origin warehouse have enough" has to mean summed across every
+  `StorageLocation` in it, not one specific bucket — see `transferWarehouseStock`'s own javadoc
+  for the debit order across multiple locations and how movement records stay accurate.
 - Prefer **deriving** a concept (e.g. batch "direction") from other fields already on the
   request rather than storing it as its own field, when it can be derived reliably — see
   `EquipmentAssignmentBatch`'s direction, resolved from `destinationWarehouseId`'s `Warehouse.type`

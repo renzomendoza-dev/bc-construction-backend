@@ -18,6 +18,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 
@@ -42,6 +44,13 @@ import java.util.Objects;
  * that through adjustStock's single-location, single-type DTO shape isn't possible
  * without changing its contract, so transferStock shares the underlying mutation
  * helper instead.
+ *
+ * <p>{@link #transferStock} and {@link #transferWarehouseStock} are deliberately separate
+ * methods, not one method with a "should I aggregate?" flag: they answer different
+ * questions ("move exactly this bucket" vs. "move enough from anywhere in this
+ * warehouse") for different callers (a direct API caller who chose locations on
+ * purpose, vs. a TransferBatch line that never had a location to begin with) — see
+ * transferWarehouseStock's own javadoc.
  */
 @Service
 @RequiredArgsConstructor
@@ -110,6 +119,7 @@ public class InventoryService {
                 .fromLocation(outgoing ? location : null)
                 .toLocation(increase ? location : null)
                 .type(type)
+                .direction(increase ? MovementDirection.IN : MovementDirection.OUT)
                 .quantity(request.getQuantity())
                 .reason(request.getReason())
                 .build();
@@ -177,8 +187,9 @@ public class InventoryService {
                     .fromLocation(fromLocation)
                     .toLocation(toLocation)
                     .type(MovementType.TRANSFER)
+                    .direction(MovementDirection.WITHIN)
                     .quantity(request.getQuantity())
-                    .reason("Transfer within warehouse " + fromWarehouse.getId())
+                    .reason("Transfer within " + fromWarehouse.getName())
                     .build();
             StockMovement saved = stockMovementRepository.save(movement);
             return List.of(stockMovementMapper.toResponse(saved));
@@ -190,8 +201,9 @@ public class InventoryService {
                 .fromLocation(fromLocation)
                 .toLocation(null)
                 .type(MovementType.TRANSFER)
+                .direction(MovementDirection.OUT)
                 .quantity(request.getQuantity())
-                .reason("Transfer to warehouse " + toWarehouse.getId())
+                .reason("Transfer to " + toWarehouse.getName())
                 .build();
         StockMovement inMovement = StockMovement.builder()
                 .item(item)
@@ -199,14 +211,129 @@ public class InventoryService {
                 .fromLocation(null)
                 .toLocation(toLocation)
                 .type(MovementType.TRANSFER)
+                .direction(MovementDirection.IN)
                 .quantity(request.getQuantity())
-                .reason("Transfer from warehouse " + fromWarehouse.getId())
+                .reason("Transfer from " + fromWarehouse.getName())
                 .build();
 
         StockMovement savedOut = stockMovementRepository.save(outMovement);
         StockMovement savedIn = stockMovementRepository.save(inMovement);
 
         return List.of(stockMovementMapper.toResponse(savedOut), stockMovementMapper.toResponse(savedIn));
+    }
+
+    /**
+     * Moves stock from one warehouse to another for TransferBatch submission,
+     * where a batch line only ever specifies warehouses —
+     * TransferBatchCreateRequest/TransferLineItemRequest have no locationId
+     * field at all. Unlike {@link #transferStock} (which checks/moves exactly
+     * one item+warehouse+location combination — appropriate for
+     * POST /api/inventory/transfer, where a caller explicitly chooses
+     * locations, including choosing "no location" on purpose), this sums and
+     * debits the origin warehouse's ENTIRE balance for the item — every
+     * StorageLocation plus the no-location bucket — since a batch's actual
+     * mental model is "does warehouse X have enough of item Y," not "does
+     * this one bucket have enough."
+     *
+     * <p>When the total is spread across more than one location, locations
+     * are drained in a fixed, deterministic order: the no-location bucket
+     * first, then each StorageLocation ordered by id ascending, until the
+     * requested quantity is covered. One TRANSFER-type StockMovement row is
+     * written per origin location actually decremented, each carrying only
+     * its own partial quantity, so Movement History stays accurate about
+     * exactly where stock moved from. The destination side is always a
+     * single deposit into the destination warehouse's no-location bucket
+     * (matching how a confirmed PurchaseReceipt already deposits stock) —
+     * a batch has no concept of a destination location either — written as
+     * one further TRANSFER-type row.
+     *
+     * <p>Cross-warehouse only: a TransferBatch's origin/destination
+     * warehouses are already validated distinct at creation
+     * (TransferBatchService.createDraft), so same-warehouse isn't a case
+     * this needs to support.
+     */
+    @Transactional
+    public List<StockMovementResponse> transferWarehouseStock(
+            Long itemId, Long fromWarehouseId, Long toWarehouseId, Integer quantity) {
+        if (quantity == null || quantity <= 0) {
+            throw new InvalidStockOperationException(
+                    "Transfer quantity must be greater than zero, received: " + quantity);
+        }
+        if (Objects.equals(fromWarehouseId, toWarehouseId)) {
+            throw new InvalidStockOperationException(
+                    "Transfer source and destination warehouse must be different (warehouseId: "
+                            + fromWarehouseId + ")");
+        }
+
+        Item item = itemRepository.findById(itemId)
+                .orElseThrow(() -> new ResourceNotFoundException("Item", itemId));
+        if (!item.isActive()) {
+            throw new InactiveResourceException("Item", item.getId());
+        }
+
+        Warehouse fromWarehouse = warehouseRepository.findById(fromWarehouseId)
+                .orElseThrow(() -> new ResourceNotFoundException("Warehouse", fromWarehouseId));
+        if (!fromWarehouse.isActive()) {
+            throw new InactiveResourceException("Warehouse", fromWarehouse.getId());
+        }
+
+        Warehouse toWarehouse = warehouseRepository.findById(toWarehouseId)
+                .orElseThrow(() -> new ResourceNotFoundException("Warehouse", toWarehouseId));
+        if (!toWarehouse.isActive()) {
+            throw new InactiveResourceException("Warehouse", toWarehouse.getId());
+        }
+
+        List<InventoryStock> originStocks = inventoryStockRepository
+                .findAllByItemAndWarehouse(itemId, fromWarehouseId).stream()
+                .sorted(Comparator.comparing(
+                        stock -> stock.getLocation() == null ? -1L : stock.getLocation().getId()))
+                .toList();
+
+        int totalAvailable = originStocks.stream().mapToInt(InventoryStock::getQuantity).sum();
+        if (totalAvailable < quantity) {
+            throw new InsufficientStockException(itemId, fromWarehouseId, quantity, totalAvailable);
+        }
+
+        List<StockMovement> movements = new ArrayList<>();
+        int remaining = quantity;
+        for (InventoryStock stock : originStocks) {
+            if (remaining <= 0) {
+                break;
+            }
+            if (stock.getQuantity() <= 0) {
+                continue;
+            }
+            int drain = Math.min(remaining, stock.getQuantity());
+            mutateQuantity(item, fromWarehouse, stock.getLocation(), false, false, drain);
+            movements.add(StockMovement.builder()
+                    .item(item)
+                    .warehouse(fromWarehouse)
+                    .fromLocation(stock.getLocation())
+                    .toLocation(null)
+                    .type(MovementType.TRANSFER)
+                    .direction(MovementDirection.OUT)
+                    .quantity(drain)
+                    .reason("Transfer to " + toWarehouse.getName())
+                    .build());
+            remaining -= drain;
+        }
+
+        mutateQuantity(item, toWarehouse, null, true, true, quantity);
+        movements.add(StockMovement.builder()
+                .item(item)
+                .warehouse(toWarehouse)
+                .fromLocation(null)
+                .toLocation(null)
+                .type(MovementType.TRANSFER)
+                .direction(MovementDirection.IN)
+                .quantity(quantity)
+                .reason("Transfer from " + fromWarehouse.getName())
+                .build());
+
+        return movements.stream()
+                .map(stockMovementRepository::save)
+                .map(stockMovementMapper::toResponse)
+                .toList();
     }
 
     @Transactional(readOnly = true)

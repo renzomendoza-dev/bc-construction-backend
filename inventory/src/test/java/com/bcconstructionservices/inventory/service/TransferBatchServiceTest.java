@@ -2,7 +2,6 @@ package com.bcconstructionservices.inventory.service;
 
 import com.bcconstructionservices.inventory.dto.PageResponse;
 import com.bcconstructionservices.inventory.dto.StockMovementResponse;
-import com.bcconstructionservices.inventory.dto.StockTransferRequest;
 import com.bcconstructionservices.inventory.dto.TransferBatchCreateRequest;
 import com.bcconstructionservices.inventory.dto.TransferBatchResponse;
 import com.bcconstructionservices.inventory.dto.TransferLineItemRequest;
@@ -292,48 +291,40 @@ class TransferBatchServiceTest {
     class SubmitTests {
 
         @Test
-        void shouldCallTransferStockOncePerLineItemAndMarkBatchCompleted() {
+        void shouldCallTransferWarehouseStockOncePerLineItemAndMarkBatchCompleted() {
             TransferLineItem lineA = line(null, item, 50);
             TransferBatch batch = buildDraftBatchWithLines(List.of(lineA));
             lineA.setTransferBatch(batch);
 
             when(transferBatchRepository.findByIdWithWarehouses(BATCH_ID)).thenReturn(Optional.of(batch));
             when(transferLineItemRepository.findByTransferBatchId(BATCH_ID)).thenReturn(batch.getLineItems());
-            when(inventoryService.transferStock(any(StockTransferRequest.class)))
+            when(inventoryService.transferWarehouseStock(any(), any(), any(), any()))
                     .thenReturn(List.of(new StockMovementResponse()));
             givenSavesEchoTheirArgument();
 
             transferBatchService.submit(BATCH_ID);
 
-            verify(inventoryService, times(1)).transferStock(any(StockTransferRequest.class));
+            verify(inventoryService, times(1)).transferWarehouseStock(any(), any(), any(), any());
             TransferBatch saved = captureSavedBatch();
             assertThat(saved.getStatus()).isEqualTo(TransferBatchStatus.COMPLETED);
         }
 
         @Test
-        void shouldBuildStockTransferRequestFromBatchOriginDestinationAndLineQuantity() {
+        void shouldCallTransferWarehouseStockWithBatchOriginDestinationAndLineQuantity() {
             TransferLineItem lineA = line(null, item, 50);
             TransferBatch batch = buildDraftBatchWithLines(List.of(lineA));
             lineA.setTransferBatch(batch);
 
             when(transferBatchRepository.findByIdWithWarehouses(BATCH_ID)).thenReturn(Optional.of(batch));
             when(transferLineItemRepository.findByTransferBatchId(BATCH_ID)).thenReturn(batch.getLineItems());
-            when(inventoryService.transferStock(any(StockTransferRequest.class)))
+            when(inventoryService.transferWarehouseStock(any(), any(), any(), any()))
                     .thenReturn(List.of(new StockMovementResponse()));
             givenSavesEchoTheirArgument();
 
             transferBatchService.submit(BATCH_ID);
 
-            ArgumentCaptor<StockTransferRequest> captor = ArgumentCaptor.forClass(StockTransferRequest.class);
-            verify(inventoryService).transferStock(captor.capture());
-            StockTransferRequest transferRequest = captor.getValue();
-
-            assertThat(transferRequest.getItemId()).isEqualTo(ITEM_ID);
-            assertThat(transferRequest.getFromWarehouseId()).isEqualTo(ORIGIN_WAREHOUSE_ID);
-            assertThat(transferRequest.getToWarehouseId()).isEqualTo(DESTINATION_WAREHOUSE_ID);
-            assertThat(transferRequest.getQuantity()).isEqualTo(50);
-            assertThat(transferRequest.getFromLocationId()).isNull();
-            assertThat(transferRequest.getToLocationId()).isNull();
+            verify(inventoryService).transferWarehouseStock(
+                    ITEM_ID, ORIGIN_WAREHOUSE_ID, DESTINATION_WAREHOUSE_ID, 50);
         }
 
         @Test
@@ -350,7 +341,7 @@ class TransferBatchServiceTest {
 
             when(transferBatchRepository.findByIdWithWarehouses(BATCH_ID)).thenReturn(Optional.of(batch));
             when(transferLineItemRepository.findByTransferBatchId(BATCH_ID)).thenReturn(batch.getLineItems());
-            when(inventoryService.transferStock(any(StockTransferRequest.class)))
+            when(inventoryService.transferWarehouseStock(any(), any(), any(), any()))
                     .thenReturn(List.of(new StockMovementResponse()))
                     .thenThrow(new InsufficientStockException(43L, ORIGIN_WAREHOUSE_ID, 8, 3));
 
@@ -372,7 +363,7 @@ class TransferBatchServiceTest {
 
             when(transferBatchRepository.findByIdWithWarehouses(BATCH_ID)).thenReturn(Optional.of(batch));
             when(transferLineItemRepository.findByTransferBatchId(BATCH_ID)).thenReturn(batch.getLineItems());
-            when(inventoryService.transferStock(any(StockTransferRequest.class)))
+            when(inventoryService.transferWarehouseStock(any(), any(), any(), any()))
                     .thenThrow(new InsufficientStockException(ITEM_ID, ORIGIN_WAREHOUSE_ID, 50, 10));
 
             assertThatExceptionOfType(InsufficientStockException.class)
@@ -438,7 +429,7 @@ class TransferBatchServiceTest {
 
             when(transferBatchRepository.findByIdWithWarehouses(BATCH_ID)).thenReturn(Optional.of(batch));
             when(transferLineItemRepository.findByTransferBatchId(BATCH_ID)).thenReturn(batch.getLineItems());
-            when(inventoryService.transferStock(any(StockTransferRequest.class)))
+            when(inventoryService.transferWarehouseStock(any(), any(), any(), any()))
                     .thenReturn(List.of(new StockMovementResponse()));
             when(materialRequestRepository.findByIdWithSite(14L)).thenReturn(Optional.of(materialRequest));
             when(materialRequestLineItemRepository.findByMaterialRequestId(14L))
@@ -470,7 +461,7 @@ class TransferBatchServiceTest {
 
             when(transferBatchRepository.findByIdWithWarehouses(BATCH_ID)).thenReturn(Optional.of(batch));
             when(transferLineItemRepository.findByTransferBatchId(BATCH_ID)).thenReturn(batch.getLineItems());
-            when(inventoryService.transferStock(any(StockTransferRequest.class)))
+            when(inventoryService.transferWarehouseStock(any(), any(), any(), any()))
                     .thenReturn(List.of(new StockMovementResponse()));
             when(materialRequestRepository.findByIdWithSite(14L)).thenReturn(Optional.of(materialRequest));
             when(materialRequestLineItemRepository.findByMaterialRequestId(14L))
@@ -495,7 +486,7 @@ class TransferBatchServiceTest {
 
             when(transferBatchRepository.findByIdWithWarehouses(BATCH_ID)).thenReturn(Optional.of(batch));
             when(transferLineItemRepository.findByTransferBatchId(BATCH_ID)).thenReturn(batch.getLineItems());
-            when(inventoryService.transferStock(any(StockTransferRequest.class)))
+            when(inventoryService.transferWarehouseStock(any(), any(), any(), any()))
                     .thenReturn(List.of(new StockMovementResponse()));
             givenSavesEchoTheirArgument();
 

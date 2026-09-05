@@ -55,7 +55,7 @@ All endpoints return `application/json` and validate request bodies with `@Valid
 - `GET /api/inventory/low-stock` — items at or below their reorder threshold
 - `POST /api/inventory/adjust` — record a single-location `IN`/`OUT`/`ADJUSTMENT` movement
 - `POST /api/inventory/transfer` — move stock between warehouses/locations (`TRANSFER`, produces two movement records)
-- `GET /api/inventory/movements` — paginated movement history (filterable)
+- `GET /api/inventory/movements` — paginated movement history (filterable). Each row's `direction` (`IN`/`OUT`/`WITHIN`) is the reliable way to tell a cross-warehouse `TRANSFER`'s origin-side row from its destination-side row — `fromLocationId`/`toLocationId` nullability alone is not, since the origin side can legitimately have both null too (draining the no-location bucket). `WITHIN` only occurs for a same-warehouse `TRANSFER`'s single row (net-zero effect on that warehouse's stock level). `reason` interpolates the real warehouse name, not an id.
 - `PATCH /api/inventory/reorder-threshold` — set the reorder threshold for an item/warehouse
 
 ### Warehouses — `/api/warehouses`
@@ -107,7 +107,7 @@ request's status.
 
 ### Transfer batches — `/api/inventory/transfer-batches`
 - `POST /api/inventory/transfer-batches` — create a draft batch (optionally against a `MaterialRequest` via `sourceMaterialRequestId`)
-- `POST /api/inventory/transfer-batches/{id}/submit` — submit a draft batch, moving stock from the `MAIN` warehouse to the `SITE` warehouse for each line and updating the source request's status, if any. On 409 (insufficient stock), the batch's status is set to `AWAITING_PURCHASE` instead of being left as an untouched draft
+- `POST /api/inventory/transfer-batches/{id}/submit` — submit a draft batch, moving stock from the `MAIN` warehouse to the `SITE` warehouse for each line and updating the source request's status, if any. Checked/debited against the origin warehouse's TOTAL balance for the item (every storage location plus the no-location bucket), not one specific location — a batch line has no `locationId` field to narrow by. When spread across more than one location, they're drained no-location-bucket-first then by location id ascending, each with its own accurate movement record; the destination side always lands in the destination warehouse's no-location bucket. On 409 (insufficient stock), the batch's status is set to `AWAITING_PURCHASE` instead of being left as an untouched draft
 - `DELETE /api/inventory/transfer-batches/{id}` — delete a `DRAFT` batch (422 for any other status). Never touches a `sourceMaterialRequestId`'s `MaterialRequest` — the request is just left with no draft transfer against it
 - `GET /api/inventory/transfer-batches/{id}` — get by id
 - `GET /api/inventory/transfer-batches` — paginated list
@@ -130,8 +130,8 @@ the reverse reference itself.
 
 `TransferBatchStatusUpdater` persists `AWAITING_PURCHASE` in its own `REQUIRES_NEW` transaction,
 independent of the failed `submit()` call — by the time `submit()` catches
-`InsufficientStockException`, `InventoryService.transferStock`'s own transactional advice has
-already marked the ambient transaction rollback-only, so a plain write at that point would just
+`InsufficientStockException`, `InventoryService.transferWarehouseStock`'s own transactional advice
+has already marked the ambient transaction rollback-only, so a plain write at that point would just
 be discarded. Every stock transfer already applied earlier in that submit's loop is still rolled
 back as before; only the `AWAITING_PURCHASE` marker survives.
 
@@ -226,13 +226,14 @@ app:
 
 ## Database migrations
 
-Flyway migrations live in `src/main/resources/db/migration`, `V2` through `V25` (module-local —
+Flyway migrations live in `src/main/resources/db/migration`, `V2` through `V26` (module-local —
 the full version sequence is shared and global across all modules, so this module doesn't own
 every number), covering items, item images, suppliers, item-supplier links, warehouses, storage
 locations, inventory stock, stock movements, purchase receipts and lines, a `type` column added
 to `warehouse` (`MAIN`/`SITE`), the transfer batch / material request tables, (`V23`) the
-`AWAITING_PURCHASE` transfer batch status plus `purchase_receipt.fulfills_transfer_batch_id`, and
-(`V25`) `purchase_order`/`purchase_order_line` plus `purchase_receipt.purchase_order_id`.
+`AWAITING_PURCHASE` transfer batch status plus `purchase_receipt.fulfills_transfer_batch_id`,
+(`V25`) `purchase_order`/`purchase_order_line` plus `purchase_receipt.purchase_order_id`, and
+(`V26`) `stock_movement.direction`.
 Dev-only demo data seeds live separately under `app/src/main/resources/db/dev-data` and are only
 loaded when the `dev` Spring profile's `flyway.locations` override is active — never in prod.
 

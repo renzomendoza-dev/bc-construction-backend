@@ -1,5 +1,6 @@
 package com.bcconstructionservices.inventory.dto;
 
+import com.bcconstructionservices.inventory.entity.MovementDirection;
 import com.bcconstructionservices.inventory.entity.MovementType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
@@ -41,6 +42,16 @@ public class StockMovementResponse {
     @Schema(description = "Type of stock movement", example = "TRANSFER",
             allowableValues = {"IN", "OUT", "TRANSFER", "ADJUSTMENT"})
     private MovementType type;
+
+    @Schema(description = "Net effect of this row on its OWN warehouseId's stock level: IN (increased), "
+            + "OUT (decreased), or WITHIN (net-zero — an internal move between two locations in the same "
+            + "warehouse; only occurs for a same-warehouse TRANSFER, the single row that sets both "
+            + "fromLocationId and toLocationId). For a cross-warehouse TRANSFER, this is the reliable way to "
+            + "tell the origin-side row from the destination-side row — fromLocationId/toLocationId "
+            + "nullability alone is not, since the origin side can legitimately be null too (e.g. when the "
+            + "debited quantity came from the no-location bucket).",
+            example = "OUT", allowableValues = {"IN", "OUT", "WITHIN"})
+    private MovementDirection direction;
 
     @Schema(description = "Quantity of stock involved in the movement", example = "50")
     private Integer quantity;

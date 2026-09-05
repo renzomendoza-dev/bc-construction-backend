@@ -227,19 +227,23 @@ class InventoryServiceTransferStockTest {
 
             StockMovement out = movements.get(0);
             assertThat(out.getType()).isEqualTo(MovementType.TRANSFER);
+            assertThat(out.getDirection()).isEqualTo(MovementDirection.OUT);
             assertThat(out.getItem()).isEqualTo(activeItem);
             assertThat(out.getWarehouse()).isEqualTo(fromWarehouse);
             assertThat(out.getQuantity()).isEqualTo(40);
             assertThat(out.getFromLocation()).isEqualTo(fromLocation);
             assertThat(out.getToLocation()).isNull();
+            assertThat(out.getReason()).isEqualTo("Transfer to " + toWarehouse.getName());
 
             StockMovement in = movements.get(1);
             assertThat(in.getType()).isEqualTo(MovementType.TRANSFER);
+            assertThat(in.getDirection()).isEqualTo(MovementDirection.IN);
             assertThat(in.getItem()).isEqualTo(activeItem);
             assertThat(in.getWarehouse()).isEqualTo(toWarehouse);
             assertThat(in.getQuantity()).isEqualTo(40);
             assertThat(in.getFromLocation()).isNull();
             assertThat(in.getToLocation()).isEqualTo(toLocation);
+            assertThat(in.getReason()).isEqualTo("Transfer from " + fromWarehouse.getName());
         }
 
         @Test
@@ -266,10 +270,12 @@ class InventoryServiceTransferStockTest {
             StockMovement movement = movementCaptor.getValue();
 
             assertThat(movement.getType()).isEqualTo(MovementType.TRANSFER);
+            assertThat(movement.getDirection()).isEqualTo(MovementDirection.WITHIN);
             assertThat(movement.getItem()).isEqualTo(activeItem);
             assertThat(movement.getQuantity()).isEqualTo(30);
             assertThat(movement.getFromLocation()).isEqualTo(fromLocation);
             assertThat(movement.getToLocation()).isEqualTo(otherLocationSameWarehouse);
+            assertThat(movement.getReason()).isEqualTo("Transfer within " + fromWarehouse.getName());
         }
 
         @Test

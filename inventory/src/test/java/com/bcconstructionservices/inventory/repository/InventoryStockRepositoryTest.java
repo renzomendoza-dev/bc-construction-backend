@@ -13,6 +13,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -235,6 +236,63 @@ class InventoryStockRepositoryTest {
 
             Optional<InventoryStock> result = inventoryStockRepository
                     .findByItemAndWarehouseAndLocation(item.getId(), warehouse.getId(), location.getId());
+
+            assertThat(result).isEmpty();
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // findAllByItemAndWarehouse
+    // ---------------------------------------------------------------
+
+    @Nested
+    class FindAllByItemAndWarehouseTests {
+
+        @Test
+        void shouldReturnEveryLocationRowPlusTheNoLocationBucketForTheSameItemAndWarehouse() {
+            Item item = persistItem("SKU-810", "Portland Cement 40kg");
+            Warehouse warehouse = persistWarehouse("WH-810", "Warehouse 810");
+            StorageLocation binA1 = persistLocation(warehouse, "A1");
+            StorageLocation binA2 = persistLocation(warehouse, "A2");
+
+            inventoryStockRepository.saveAndFlush(stock(item, warehouse, null, 5));
+            inventoryStockRepository.saveAndFlush(stock(item, warehouse, binA1, 30));
+            inventoryStockRepository.saveAndFlush(stock(item, warehouse, binA2, 20));
+            entityManager.clear();
+
+            List<InventoryStock> result = inventoryStockRepository
+                    .findAllByItemAndWarehouse(item.getId(), warehouse.getId());
+
+            assertThat(result).hasSize(3);
+            assertThat(result.stream().mapToInt(InventoryStock::getQuantity).sum()).isEqualTo(55);
+        }
+
+        @Test
+        void shouldNotReturnRowsForADifferentWarehouseOrItem() {
+            Item item = persistItem("SKU-811", "Deformed Rebar 10mm");
+            Item otherItem = persistItem("SKU-812", "Angle Bar 25mm");
+            Warehouse warehouse = persistWarehouse("WH-811", "Warehouse 811");
+            Warehouse otherWarehouse = persistWarehouse("WH-812", "Warehouse 812");
+
+            inventoryStockRepository.saveAndFlush(stock(item, warehouse, null, 10));
+            inventoryStockRepository.saveAndFlush(stock(otherItem, warehouse, null, 99));
+            inventoryStockRepository.saveAndFlush(stock(item, otherWarehouse, null, 99));
+            entityManager.clear();
+
+            List<InventoryStock> result = inventoryStockRepository
+                    .findAllByItemAndWarehouse(item.getId(), warehouse.getId());
+
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).getQuantity()).isEqualTo(10);
+        }
+
+        @Test
+        void shouldReturnEmptyListWhenNoStockExistsForTheCombination() {
+            Item item = persistItem("SKU-813", "Hollow Block 4in CHB");
+            Warehouse warehouse = persistWarehouse("WH-813", "Warehouse 813");
+
+            List<InventoryStock> result = inventoryStockRepository
+                    .findAllByItemAndWarehouse(item.getId(), warehouse.getId());
 
             assertThat(result).isEmpty();
         }

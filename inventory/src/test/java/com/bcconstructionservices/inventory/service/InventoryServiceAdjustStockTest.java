@@ -165,6 +165,7 @@ class InventoryServiceAdjustStockTest {
             verify(stockMovementRepository).save(movementCaptor.capture());
             StockMovement savedMovement = movementCaptor.getValue();
             assertThat(savedMovement.getType()).isEqualTo(MovementType.IN);
+            assertThat(savedMovement.getDirection()).isEqualTo(MovementDirection.IN);
             assertThat(savedMovement.getQuantity()).isEqualTo(50);
             assertThat(savedMovement.getItem()).isEqualTo(activeItem);
             assertThat(savedMovement.getWarehouse()).isEqualTo(activeWarehouse);
@@ -231,6 +232,7 @@ class InventoryServiceAdjustStockTest {
             ArgumentCaptor<StockMovement> movementCaptor = ArgumentCaptor.forClass(StockMovement.class);
             verify(stockMovementRepository).save(movementCaptor.capture());
             assertThat(movementCaptor.getValue().getType()).isEqualTo(MovementType.OUT);
+            assertThat(movementCaptor.getValue().getDirection()).isEqualTo(MovementDirection.OUT);
             assertThat(movementCaptor.getValue().getQuantity()).isEqualTo(40);
         }
 
@@ -309,6 +311,7 @@ class InventoryServiceAdjustStockTest {
             ArgumentCaptor<StockMovement> movementCaptor = ArgumentCaptor.forClass(StockMovement.class);
             verify(stockMovementRepository).save(movementCaptor.capture());
             assertThat(movementCaptor.getValue().getType()).isEqualTo(MovementType.ADJUSTMENT);
+            assertThat(movementCaptor.getValue().getDirection()).isEqualTo(MovementDirection.IN);
         }
 
 //        @Test

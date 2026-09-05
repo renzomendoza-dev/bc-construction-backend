@@ -129,6 +129,7 @@ class InventoryServiceReadMethodsTest {
         m.setItem(item);
         m.setWarehouse(warehouse);
         m.setType(type);
+        m.setDirection(MovementDirection.IN);
         m.setQuantity(quantity);
         return m;
     }

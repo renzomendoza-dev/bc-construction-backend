@@ -65,6 +65,7 @@ class StockMovementMapperTest {
         movement.setFromLocation(fromLocation);
         movement.setToLocation(toLocation);
         movement.setType(type);
+        movement.setDirection(MovementDirection.OUT);
         movement.setQuantity(50);
         movement.setReason("Delivery from supplier PO-2026-0713");
         movement.setCreatedAt(Instant.parse("2026-07-13T02:40:00Z"));
@@ -89,6 +90,7 @@ class StockMovementMapperTest {
             assertThat(response.getFromLocationId()).isEqualTo(21L);
             assertThat(response.getToLocationId()).isEqualTo(22L);
             assertThat(response.getType()).isEqualTo(MovementType.TRANSFER);
+            assertThat(response.getDirection()).isEqualTo(MovementDirection.OUT);
             assertThat(response.getQuantity()).isEqualTo(50);
             assertThat(response.getReason()).isEqualTo("Delivery from supplier PO-2026-0713");
             assertThat(response.getCreatedAt()).isEqualTo(Instant.parse("2026-07-13T02:40:00Z"));
@@ -163,6 +165,21 @@ class StockMovementMapperTest {
             StockMovementResponse response = mapper.toResponse(movement);
 
             assertThat(response.getType()).isEqualTo(type);
+        }
+    }
+
+    @Nested
+    class DirectionEnumMapping {
+
+        @ParameterizedTest
+        @EnumSource(MovementDirection.class)
+        void shouldMapEveryMovementDirectionThroughUnchanged(MovementDirection direction) {
+            StockMovement movement = buildMovement(MovementType.TRANSFER, locationA, locationB);
+            movement.setDirection(direction);
+
+            StockMovementResponse response = mapper.toResponse(movement);
+
+            assertThat(response.getDirection()).isEqualTo(direction);
         }
     }
 }

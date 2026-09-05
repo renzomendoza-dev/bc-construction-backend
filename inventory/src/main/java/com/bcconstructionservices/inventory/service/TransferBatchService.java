@@ -1,7 +1,6 @@
 package com.bcconstructionservices.inventory.service;
 
 import com.bcconstructionservices.inventory.dto.PageResponse;
-import com.bcconstructionservices.inventory.dto.StockTransferRequest;
 import com.bcconstructionservices.inventory.dto.TransferBatchCreateRequest;
 import com.bcconstructionservices.inventory.dto.TransferBatchResponse;
 import com.bcconstructionservices.inventory.dto.TransferLineItemRequest;
@@ -45,7 +44,12 @@ import java.util.stream.Collectors;
  *
  * <p>submit() never touches InventoryStock or StockMovement directly — per
  * InventoryService's class-level invariant, all stock mutations route through
- * {@link InventoryService#transferStock}, once per line item.
+ * {@link InventoryService#transferWarehouseStock}, once per line item. That
+ * method (not the single-location {@link InventoryService#transferStock}) is
+ * the right one here specifically because a batch line only ever specifies
+ * warehouses — TransferBatchCreateRequest/TransferLineItemRequest have no
+ * locationId field — so "does the origin warehouse have enough" has to mean
+ * summed across every StorageLocation in it, not one specific bucket.
  */
 @Service
 @RequiredArgsConstructor
@@ -112,11 +116,14 @@ public class TransferBatchService {
     /**
      * Transitions a batch DRAFT -&gt; SUBMITTED -&gt; COMPLETED in one call (Phase 1
      * has no separate approval step). For each line item, delegates to
-     * {@link InventoryService#transferStock} — the sole owner of InventoryStock/
-     * StockMovement mutations — rather than reimplementing stock math. The whole
-     * method is one transaction, so a failure on any line (e.g. insufficient
-     * stock) rolls back every transfer already applied earlier in the loop and
-     * the batch's SUBMITTED status set above; the response/exception this
+     * {@link InventoryService#transferWarehouseStock} — the sole owner of
+     * InventoryStock/StockMovement mutations — rather than reimplementing
+     * stock math. That method sums/debits across every StorageLocation in
+     * the origin warehouse (not one specific bucket), since a batch line has
+     * no locationId to check against in the first place. The whole method is
+     * one transaction, so a failure on any line (e.g. insufficient stock)
+     * rolls back every transfer already applied earlier in the loop and the
+     * batch's SUBMITTED status set above; the response/exception this
      * method throws is unchanged from before.
      *
      * <p>The one durable side effect of a failed attempt: if the failure was
@@ -143,15 +150,14 @@ public class TransferBatchService {
 
         try {
             for (TransferLineItem line : lineItems) {
-                StockTransferRequest transferRequest = StockTransferRequest.builder()
-                        .itemId(line.getItem().getId())
-                        .fromWarehouseId(batch.getOriginWarehouse().getId())
-                        .toWarehouseId(batch.getDestinationWarehouse().getId())
-                        .quantity(line.getQuantity())
-                        .build();
-
-                // The only call in this codebase permitted to change InventoryStock.quantity.
-                inventoryService.transferStock(transferRequest);
+                // The only call in this codebase permitted to change InventoryStock.quantity
+                // for a batch line — see InventoryService.transferWarehouseStock's own
+                // javadoc for why the warehouse-total variant is the right one here.
+                inventoryService.transferWarehouseStock(
+                        line.getItem().getId(),
+                        batch.getOriginWarehouse().getId(),
+                        batch.getDestinationWarehouse().getId(),
+                        line.getQuantity());
             }
         } catch (InsufficientStockException ex) {
             transferBatchStatusUpdater.markAwaitingPurchase(transferBatchId);

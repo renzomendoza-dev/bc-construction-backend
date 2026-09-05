@@ -32,6 +32,23 @@ public interface InventoryStockRepository extends JpaRepository<InventoryStock, 
             @Param("locationId") Long locationId);
 
     /**
+     * Every stock row for an item across every location in a warehouse — the
+     * no-location bucket included. Used by
+     * InventoryService.transferWarehouseStock to sum/debit a TransferBatch
+     * line's warehouse-total balance rather than one specific location (a
+     * batch line has no locationId to narrow by in the first place).
+     */
+    @Query("""
+            SELECT s FROM InventoryStock s
+            JOIN FETCH s.item
+            JOIN FETCH s.warehouse
+            LEFT JOIN FETCH s.location
+            WHERE s.item.id = :itemId
+              AND s.warehouse.id = :warehouseId
+            """)
+    List<InventoryStock> findAllByItemAndWarehouse(@Param("itemId") Long itemId, @Param("warehouseId") Long warehouseId);
+
+    /**
      * Filters stock rows by optional item and/or warehouse; either or both may be null.
      */
     @Query("""

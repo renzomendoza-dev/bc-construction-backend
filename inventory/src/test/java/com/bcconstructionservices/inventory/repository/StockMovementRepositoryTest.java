@@ -1,6 +1,7 @@
 package com.bcconstructionservices.inventory.repository;
 
 import com.bcconstructionservices.inventory.entity.Item;
+import com.bcconstructionservices.inventory.entity.MovementDirection;
 import com.bcconstructionservices.inventory.entity.MovementType;
 import com.bcconstructionservices.inventory.entity.StockMovement;
 import com.bcconstructionservices.inventory.entity.Warehouse;
@@ -80,6 +81,7 @@ class StockMovementRepositoryTest {
         movement.setItem(item);
         movement.setWarehouse(warehouse);
         movement.setType(type);
+        movement.setDirection(MovementDirection.IN);
         movement.setQuantity(quantity);
         movement.setReason("Repository constraint test");
         return movement;

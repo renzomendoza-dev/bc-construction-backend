@@ -7,6 +7,8 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import org.springframework.data.annotation.CreatedBy;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
@@ -48,6 +50,23 @@ public class StockMovement {
     @Enumerated(EnumType.STRING)
     @Column(name = "movement_type", nullable = false)
     private MovementType type;
+
+    /**
+     * Net effect of this row on ITS OWN warehouse's stock level — set
+     * explicitly by InventoryService at construction time, never inferred
+     * later. See {@link MovementDirection}'s own javadoc for why inferring
+     * this from fromLocation/toLocation nullability doesn't work in general.
+     */
+    @NotNull
+    @Enumerated(EnumType.STRING)
+    // Without this, Hibernate 7 + H2Dialect infer a native ENUM JDBC type for
+    // @Enumerated(STRING) fields, which doesn't match this column's actual
+    // shape: plain VARCHAR + a hand-written CHECK constraint added via
+    // Flyway — the same mismatch documented on Warehouse.type. Forcing
+    // VARCHAR here binds it as a plain string, matching the real column.
+    @JdbcTypeCode(SqlTypes.VARCHAR)
+    @Column(name = "direction", nullable = false)
+    private MovementDirection direction;
 
     @NotNull
     @Column(name = "quantity", nullable = false)
