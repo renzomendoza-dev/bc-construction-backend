@@ -18,7 +18,7 @@ import org.mapstruct.Mapping;
  * initiatedBy comes from CurrentUserService rather than the request body, and
  * lines themselves need per-line Item resolution. All of that stays in the
  * service; this mapper only covers the handful of fields that really are a
- * 1:1 copy (sourceMaterialRequestId, notes).
+ * 1:1 copy (sourceMaterialRequestId, projectId, notes).
  */
 @Mapper(componentModel = "spring", uses = {TransferLineItemMapper.class, UserLookupHelper.class})
 public interface TransferBatchMapper {

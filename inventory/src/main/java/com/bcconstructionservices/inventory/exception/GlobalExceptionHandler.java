@@ -28,6 +28,14 @@ import java.util.Map;
  * wired together, which would make it ambiguous with equipment's own
  * package-scoped catch-all for exceptions thrown by equipment's controllers
  * (the same collision already fixed for the equipment module).
+ * <p>
+ * Because {@code TransferBatchService.submit} calls {@code ProjectExpenseService}
+ * directly (a real cross-module dependency — see that service's own javadoc),
+ * exceptions owned by the projects module can legitimately bubble up through
+ * inventory's own controllers. They're handled explicitly below, mapped to
+ * the same status codes projects itself uses for them — see CLAUDE.md's
+ * "Cross-module write orchestration" for why this is necessary (they won't
+ * be caught automatically).
  */
 @Slf4j
 @RestControllerAdvice(basePackages = "com.bcconstructionservices.inventory.controller")
@@ -115,6 +123,18 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handlePurchaseOrderHasReceipts(
             PurchaseOrderHasReceiptsException ex, HttpServletRequest request) {
         return buildResponse(HttpStatus.CONFLICT, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(com.bcconstructionservices.projects.exception.ResourceNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleProjectsResourceNotFound(
+            com.bcconstructionservices.projects.exception.ResourceNotFoundException ex, HttpServletRequest request) {
+        return buildResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(com.bcconstructionservices.projects.exception.ProjectNotEditableException.class)
+    public ResponseEntity<ErrorResponse> handleProjectNotEditable(
+            com.bcconstructionservices.projects.exception.ProjectNotEditableException ex, HttpServletRequest request) {
+        return buildResponse(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), request);
     }
 
     /**

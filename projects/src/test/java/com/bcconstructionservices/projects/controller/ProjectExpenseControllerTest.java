@@ -31,6 +31,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -152,6 +153,48 @@ class ProjectExpenseControllerTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(validCreateRequest())))
                     .andExpect(status().isUnauthorized());
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // DELETE /api/projects/{projectId}/expenses/{expenseId}
+    // ---------------------------------------------------------------
+
+    @Nested
+    class DeleteTests {
+
+        @Test
+        void shouldReturn204WhenDeleted() throws Exception {
+            mockMvc.perform(delete("/api/projects/{projectId}/expenses/{expenseId}", 12L, 301L)
+                            .with(authenticatedJwt("PROJECT_EXPENSE_DELETE")))
+                    .andExpect(status().isNoContent());
+        }
+
+        @Test
+        void shouldReturn404WhenExpenseNotFound() throws Exception {
+            org.mockito.Mockito.doThrow(new ResourceNotFoundException("ProjectExpense", 999L))
+                    .when(projectExpenseService).deleteExpense(12L, 999L);
+
+            mockMvc.perform(delete("/api/projects/{projectId}/expenses/{expenseId}", 12L, 999L)
+                            .with(authenticatedJwt("PROJECT_EXPENSE_DELETE")))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        void shouldReturn422WhenProjectIsNotEditable() throws Exception {
+            org.mockito.Mockito.doThrow(new ProjectNotEditableException(12L, ProjectStatus.COMPLETED))
+                    .when(projectExpenseService).deleteExpense(12L, 301L);
+
+            mockMvc.perform(delete("/api/projects/{projectId}/expenses/{expenseId}", 12L, 301L)
+                            .with(authenticatedJwt("PROJECT_EXPENSE_DELETE")))
+                    .andExpect(status().isUnprocessableEntity());
+        }
+
+        @Test
+        void shouldReturn403WhenCallerLacksExpenseDeletePermission() throws Exception {
+            mockMvc.perform(delete("/api/projects/{projectId}/expenses/{expenseId}", 12L, 301L)
+                            .with(authenticatedJwt()))
+                    .andExpect(status().isForbidden());
         }
     }
 

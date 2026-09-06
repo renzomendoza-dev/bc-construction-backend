@@ -34,4 +34,8 @@ public class TransferLineItemResponse {
 
     @Schema(description = "Optional free-text notes, e.g. condition remarks from counting", example = "2 bags damaged, excluded from count")
     private String notes;
+
+    @Schema(description = "Identifier of the MATERIAL ProjectExpense this line auto-generated on submit, if the "
+            + "batch's projectId was set; null for a DRAFT line or a batch with no project", example = "305")
+    private Long projectExpenseId;
 }

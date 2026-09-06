@@ -12,6 +12,7 @@ import com.bcconstructionservices.inventory.entity.TransferBatch;
 import com.bcconstructionservices.inventory.entity.TransferBatchStatus;
 import com.bcconstructionservices.inventory.entity.TransferLineItem;
 import com.bcconstructionservices.inventory.entity.Warehouse;
+import com.bcconstructionservices.inventory.entity.WarehouseType;
 import com.bcconstructionservices.inventory.exception.InactiveResourceException;
 import com.bcconstructionservices.inventory.exception.InsufficientStockException;
 import com.bcconstructionservices.inventory.exception.InvalidStockOperationException;
@@ -24,12 +25,19 @@ import com.bcconstructionservices.inventory.repository.MaterialRequestRepository
 import com.bcconstructionservices.inventory.repository.TransferBatchRepository;
 import com.bcconstructionservices.inventory.repository.TransferLineItemRepository;
 import com.bcconstructionservices.inventory.repository.WarehouseRepository;
+import com.bcconstructionservices.projects.dto.ProjectExpenseCreateRequest;
+import com.bcconstructionservices.projects.dto.ProjectExpenseResponse;
+import com.bcconstructionservices.projects.entity.ExpenseCategory;
+import com.bcconstructionservices.projects.service.ProjectExpenseService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -50,6 +58,13 @@ import java.util.stream.Collectors;
  * warehouses — TransferBatchCreateRequest/TransferLineItemRequest have no
  * locationId field — so "does the origin warehouse have enough" has to mean
  * summed across every StorageLocation in it, not one specific bucket.
+ *
+ * <p>When a batch has a projectId, submit() also auto-drafts a MATERIAL
+ * ProjectExpense per line via {@link ProjectExpenseService} — see
+ * {@link #generateProjectExpense} for the direction/amount logic. This is
+ * "auto-draft for review," not a silent auto-adjusting ledger: the generated
+ * expense is a normal ProjectExpense row, deletable afterward (DELETE
+ * /api/projects/{projectId}/expenses/{expenseId}) like any manual one.
  */
 @Service
 @RequiredArgsConstructor
@@ -65,6 +80,7 @@ public class TransferBatchService {
     private final TransferBatchMapper transferBatchMapper;
     private final CurrentUserService currentUserService;
     private final TransferBatchStatusUpdater transferBatchStatusUpdater;
+    private final ProjectExpenseService projectExpenseService;
 
     @Transactional
     public TransferBatchResponse createDraft(TransferBatchCreateRequest request) {
@@ -86,7 +102,14 @@ public class TransferBatchService {
                             + origin.getId() + ")");
         }
 
-        // transferBatchMapper.toEntity only covers sourceMaterialRequestId/notes —
+        if (request.getProjectId() != null
+                && origin.getType() != WarehouseType.SITE && destination.getType() != WarehouseType.SITE) {
+            throw new InvalidStockOperationException(
+                    "projectId can only be set when the origin or destination warehouse is a SITE warehouse "
+                            + "(origin type: " + origin.getType() + ", destination type: " + destination.getType() + ")");
+        }
+
+        // transferBatchMapper.toEntity only covers sourceMaterialRequestId/projectId/notes —
         // origin/destination, initiatedBy, status, and lineItems are all ignore=true
         // by design (see TransferBatchMapper's javadoc), so they're assembled here.
         TransferBatch batch = transferBatchMapper.toEntity(request);
@@ -132,8 +155,17 @@ public class TransferBatchService {
      * {@link TransferBatchStatusUpdater}, in a transaction independent of this
      * doomed one (see its javadoc), so a PurchaseReceipt has something to link
      * to and unblock later. Other failure types (e.g. no line items, an
-     * inactive warehouse) aren't purchase-shaped problems, so they don't mark
-     * the batch blocked.
+     * inactive warehouse, a locked project from {@link #generateProjectExpense})
+     * aren't purchase-shaped problems, so they don't mark the batch blocked.
+     *
+     * <p>When {@code batch.getProjectId()} is set, each line's stock transfer
+     * is immediately followed by generating that line's MATERIAL expense
+     * (see {@link #generateProjectExpense}), inside this same loop and the
+     * same transaction — so expense generation is all-or-nothing exactly
+     * like the stock transfers themselves: if any line's expense fails (e.g.
+     * the project is COMPLETED/CANCELLED, 422), every stock movement already
+     * applied earlier in the loop rolls back too, same as an
+     * InsufficientStockException failure part-way through would.
      */
     @Transactional
     public TransferBatchResponse submit(Long transferBatchId) {
@@ -158,6 +190,10 @@ public class TransferBatchService {
                         batch.getOriginWarehouse().getId(),
                         batch.getDestinationWarehouse().getId(),
                         line.getQuantity());
+
+                if (batch.getProjectId() != null) {
+                    generateProjectExpense(batch, line);
+                }
             }
         } catch (InsufficientStockException ex) {
             transferBatchStatusUpdater.markAwaitingPurchase(transferBatchId);
@@ -172,6 +208,56 @@ public class TransferBatchService {
         }
 
         return transferBatchMapper.toResponse(saved);
+    }
+
+    /**
+     * Auto-drafts a MATERIAL ProjectExpense for one line, via a direct call
+     * to ProjectExpenseService — the same cross-module write-orchestration
+     * pattern workers.AttendanceService established (see CLAUDE.md's
+     * "Cross-module write orchestration"): reuses addExpense's own
+     * project-exists/project-editable validation (404/422) rather than
+     * duplicating it, and any exception it throws propagates straight out of
+     * this method, aborting submit()'s transaction same as an
+     * InsufficientStockException would.
+     *
+     * <p>Direction is derived from warehouse type, never stored — same
+     * "derive, don't store" reasoning as EquipmentAssignmentBatch's
+     * direction. Dispatching to a SITE warehouse records a positive amount;
+     * pulling out of one records a negative amount (a credit against the
+     * project's running MATERIAL total) using the item's current
+     * defaultCostPrice at the time of the pull-out — deliberately not tied
+     * to whatever the cost was at the original dispatch, matching the
+     * accepted "these won't always net to exactly zero" limitation.
+     */
+    private void generateProjectExpense(TransferBatch batch, TransferLineItem line) {
+        Item item = line.getItem();
+        if (item.getDefaultCostPrice() == null) {
+            throw new InvalidStockOperationException(
+                    "Item " + item.getId() + " (" + item.getName() + ") has no defaultCostPrice set, so a "
+                            + "MATERIAL expense can't be auto-generated for transfer batch " + batch.getId());
+        }
+
+        boolean isPullOut = batch.getOriginWarehouse().getType() == WarehouseType.SITE;
+
+        BigDecimal amount = item.getDefaultCostPrice()
+                .multiply(BigDecimal.valueOf(line.getQuantity()))
+                .setScale(2, RoundingMode.HALF_UP);
+        if (isPullOut) {
+            amount = amount.negate();
+        }
+
+        String description = (isPullOut ? "Pulled out: " : "Dispatched: ")
+                + item.getName() + " x" + line.getQuantity() + " (Transfer Batch #" + batch.getId() + ")";
+
+        ProjectExpenseCreateRequest expenseRequest = ProjectExpenseCreateRequest.builder()
+                .category(ExpenseCategory.MATERIAL)
+                .description(description)
+                .amount(amount)
+                .expenseDate(LocalDate.now())
+                .build();
+
+        ProjectExpenseResponse expense = projectExpenseService.addExpense(batch.getProjectId(), expenseRequest);
+        line.setProjectExpenseId(expense.getId());
     }
 
     /**

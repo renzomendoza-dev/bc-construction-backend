@@ -176,6 +176,28 @@ class TransferBatchControllerTest {
         }
 
         @Test
+        void shouldReturn422WhenTheLinkedProjectIsNotEditable() throws Exception {
+            when(transferBatchService.submit(15L))
+                    .thenThrow(new com.bcconstructionservices.projects.exception.ProjectNotEditableException(
+                            12L, com.bcconstructionservices.projects.entity.ProjectStatus.COMPLETED));
+
+            mockMvc.perform(post("/api/inventory/transfer-batches/{id}/submit", 15L)
+                            .with(authenticatedJwt("TRANSFER_BATCH_SUBMIT")))
+                    .andExpect(status().isUnprocessableEntity());
+        }
+
+        @Test
+        void shouldReturn404WhenTheLinkedProjectDoesNotExist() throws Exception {
+            when(transferBatchService.submit(15L))
+                    .thenThrow(new com.bcconstructionservices.projects.exception.ResourceNotFoundException(
+                            "Project", 12L));
+
+            mockMvc.perform(post("/api/inventory/transfer-batches/{id}/submit", 15L)
+                            .with(authenticatedJwt("TRANSFER_BATCH_SUBMIT")))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
         void shouldReturn403WhenCallerLacksTransferBatchSubmitPermission() throws Exception {
             mockMvc.perform(post("/api/inventory/transfer-batches/{id}/submit", 15L)
                             .with(authenticatedJwt()))

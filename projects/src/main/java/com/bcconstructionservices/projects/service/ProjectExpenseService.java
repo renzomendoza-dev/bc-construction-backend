@@ -52,6 +52,46 @@ public class ProjectExpenseService {
         return projectExpenseMapper.toResponse(saved);
     }
 
+    /**
+     * Validates that an expense exists under the given project and can
+     * currently be deleted (project ACTIVE/ON_HOLD, 422 otherwise) — without
+     * deleting anything. Split out from deleteExpense specifically for
+     * callers that must delete something else first, in the same
+     * transaction, before this expense can be removed: workers.AttendanceService
+     * deletes its Attendance row before calling deleteExpense below, because
+     * Attendance.projectExpenseId is a plain Long backed by a real,
+     * non-deferrable FK (not a JPA relation — see Attendance's own javadoc),
+     * so Postgres would reject deleting this row first while that FK still
+     * points at it. Calling this first lets a locked project (422) still
+     * leave both rows untouched, exactly as if deleteExpense itself had
+     * rejected the whole operation up front.
+     */
+    @Transactional(readOnly = true)
+    public ProjectExpense assertExpenseDeletable(Long projectId, Long expenseId) {
+        ProjectExpense expense = projectExpenseRepository.findById(expenseId)
+                .orElseThrow(() -> new ResourceNotFoundException("ProjectExpense", expenseId));
+        if (!expense.getProject().getId().equals(projectId)) {
+            throw new ResourceNotFoundException("ProjectExpense", expenseId);
+        }
+
+        projectService.requireEditableProject(projectId);
+        return expense;
+    }
+
+    /**
+     * Only while the project is ACTIVE/ON_HOLD (422 otherwise) — same lock
+     * condition as addExpense. Used both by a manual delete via the REST
+     * endpoint below and by the workers module's AttendanceService, which
+     * calls this directly (after deleting its own Attendance row first — see
+     * assertExpenseDeletable's javadoc) to remove the ProjectExpense that
+     * Attendance record generated.
+     */
+    @Transactional
+    public void deleteExpense(Long projectId, Long expenseId) {
+        ProjectExpense expense = assertExpenseDeletable(projectId, expenseId);
+        projectExpenseRepository.delete(expense);
+    }
+
     @Transactional(readOnly = true)
     public PageResponse<ProjectExpenseResponse> search(Long projectId, ExpenseCategory category, Pageable pageable) {
         if (!projectRepository.existsById(projectId)) {

@@ -3,7 +3,9 @@
 Maven module (`com.bcconstructionservices:inventory`) providing item catalog, warehouse/stock
 location, stock movement, purchase receipt, and supplier management for the backend. It is
 mounted into the `app` aggregator module and depends on `user` for auditing (resolving the
-current user for `createdBy`/`confirmedBy` fields).
+current user for `createdBy`/`confirmedBy` fields) and `projects` — `TransferBatchService.submit`
+calls `ProjectExpenseService` directly to auto-draft a project cost entry per line (see "Auto-drafted
+project MATERIAL expense" below).
 
 ## Domain model
 
@@ -112,6 +114,35 @@ request's status.
 - `GET /api/inventory/transfer-batches/{id}` — get by id
 - `GET /api/inventory/transfer-batches` — paginated list
 
+## Auto-drafted project MATERIAL expense
+
+`TransferBatchCreateRequest.projectId` (optional) attributes a transfer's cost to a `projects`
+module `Project`. Requires the origin or destination warehouse to actually be `SITE` type (400
+otherwise) — a plain `MAIN`-to-`MAIN` restock has no project cost implication. Immutable after
+creation, same as every other field on this entity (there's no update endpoint at all).
+
+When set, `POST /{id}/submit` auto-drafts a `MATERIAL` `ProjectExpense` per line, in the same
+transaction as that line's stock transfer:
+
+- Dispatching **to** a `SITE` warehouse: positive amount = `item.defaultCostPrice * quantity`.
+- Pulling out **of** a `SITE` warehouse: the mirror-image negative amount (a credit against the
+  project's running `MATERIAL` total), using the item's *current* `defaultCostPrice` — not tied
+  to whatever it was at the original dispatch, so these won't always net to exactly zero if the
+  cost changed in between. Accepted as a known limitation, not a gap to fix.
+- 400 if the item has no `defaultCostPrice` set (there's no cost basis to compute from).
+- 422 if the project is `COMPLETED`/`CANCELLED` — same lock rule as recording an expense
+  manually — via a direct call to `ProjectExpenseService.addExpense`, reusing its own validation
+  rather than duplicating it. This makes the whole `submit()` atomic with respect to project
+  expenses too: a locked-project failure on any line rolls back every stock transfer already
+  applied earlier in the loop, exactly like an `InsufficientStockException` failure would.
+
+Each `TransferLineItem.projectExpenseId` traces back to the expense it generated (null for a
+`DRAFT` line, or a batch with no project) — this is "auto-draft for review," not a silent
+auto-adjusting ledger: the generated expense is a normal, deletable `ProjectExpense` row, same as
+a manually-entered one. This is the second module (after `workers`) to call into
+`ProjectExpenseService` directly — see the repo-root `CLAUDE.md`'s "Cross-module write
+orchestration" for the pattern and its exception-handling gotcha.
+
 ## Blocked transfer batches (linking Material Requests to Purchasing)
 
 When `POST /{id}/submit` fails specifically on insufficient stock, the batch is marked
@@ -216,6 +247,8 @@ app:
 | `TransferBatchNotDeletableException` | 422 |
 | `PurchaseOrderNotEditableException` | 422 |
 | `PurchaseOrderNotOpenException` | 422 |
+| `projects.exception.ResourceNotFoundException` (linked project not found) | 404 |
+| `projects.exception.ProjectNotEditableException` (linked project locked) | 422 |
 | Bean validation failures | 400 (field-level `ValidationErrorResponse`) |
 | Malformed JSON | 400 |
 | `IllegalStateException` | 401 |
@@ -226,14 +259,15 @@ app:
 
 ## Database migrations
 
-Flyway migrations live in `src/main/resources/db/migration`, `V2` through `V26` (module-local —
+Flyway migrations live in `src/main/resources/db/migration`, `V2` through `V31` (module-local —
 the full version sequence is shared and global across all modules, so this module doesn't own
 every number), covering items, item images, suppliers, item-supplier links, warehouses, storage
 locations, inventory stock, stock movements, purchase receipts and lines, a `type` column added
 to `warehouse` (`MAIN`/`SITE`), the transfer batch / material request tables, (`V23`) the
 `AWAITING_PURCHASE` transfer batch status plus `purchase_receipt.fulfills_transfer_batch_id`,
-(`V25`) `purchase_order`/`purchase_order_line` plus `purchase_receipt.purchase_order_id`, and
-(`V26`) `stock_movement.direction`.
+(`V25`) `purchase_order`/`purchase_order_line` plus `purchase_receipt.purchase_order_id`,
+(`V26`) `stock_movement.direction`, and (`V31`) `transfer_batch.project_id` plus
+`transfer_line_item.project_expense_id` (real FKs into the `projects` module's tables).
 Dev-only demo data seeds live separately under `app/src/main/resources/db/dev-data` and are only
 loaded when the `dev` Spring profile's `flyway.locations` override is active — never in prod.
 

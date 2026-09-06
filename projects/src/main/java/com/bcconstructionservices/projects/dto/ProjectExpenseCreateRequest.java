@@ -4,7 +4,6 @@ import com.bcconstructionservices.projects.entity.ExpenseCategory;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -33,8 +32,10 @@ public class ProjectExpenseCreateRequest {
     private String description;
 
     @NotNull
-    @Positive
-    @Schema(description = "Cost of this expense", example = "14500.00")
+    @Schema(description = "Cost of this expense. Normally positive; a negative value represents a credit or "
+            + "reversal (e.g. inventory.TransferBatchService auto-generates one when materials are pulled back "
+            + "out of a project site) and reduces the category's running total accordingly.",
+            example = "14500.00")
     private BigDecimal amount;
 
     @NotNull

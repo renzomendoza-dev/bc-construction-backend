@@ -33,6 +33,7 @@ class TransferLineItemMapperTest {
         line.setExpectedQuantity(52);
         line.setQuantity(50);
         line.setNotes("2 bags damaged, excluded from count");
+        line.setProjectExpenseId(305L);
         return line;
     }
 
@@ -48,6 +49,7 @@ class TransferLineItemMapperTest {
         assertThat(response.getExpectedQuantity()).isEqualTo(52);
         assertThat(response.getQuantity()).isEqualTo(50);
         assertThat(response.getNotes()).isEqualTo("2 bags damaged, excluded from count");
+        assertThat(response.getProjectExpenseId()).isEqualTo(305L);
     }
 
     @Test

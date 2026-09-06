@@ -81,6 +81,19 @@ public class TransferBatch {
     @Column(name = "source_material_request_id")
     private Long sourceMaterialRequestId;
 
+    /**
+     * Set when this batch's stock movement should auto-generate a MATERIAL
+     * ProjectExpense per line on submit; null for a transfer with no project
+     * cost implication (e.g. a plain MAIN-to-MAIN restock). Plain column, not
+     * a JPA relation — Project lives in a different module (projects), which
+     * inventory now has a real Maven dependency on for exactly this (see
+     * TransferBatchService.submit's own javadoc). Immutable after creation —
+     * there's no update endpoint for this entity at all, so this is already
+     * locked once SUBMITTED same as every other field here.
+     */
+    @Column(name = "project_id")
+    private Long projectId;
+
     @Column(name = "notes")
     private String notes;
 

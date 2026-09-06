@@ -13,6 +13,7 @@ import com.bcconstructionservices.inventory.entity.TransferBatch;
 import com.bcconstructionservices.inventory.entity.TransferBatchStatus;
 import com.bcconstructionservices.inventory.entity.TransferLineItem;
 import com.bcconstructionservices.inventory.entity.Warehouse;
+import com.bcconstructionservices.inventory.entity.WarehouseType;
 import com.bcconstructionservices.inventory.exception.InactiveResourceException;
 import com.bcconstructionservices.inventory.exception.InsufficientStockException;
 import com.bcconstructionservices.inventory.exception.InvalidStockOperationException;
@@ -26,6 +27,12 @@ import com.bcconstructionservices.inventory.repository.MaterialRequestRepository
 import com.bcconstructionservices.inventory.repository.TransferBatchRepository;
 import com.bcconstructionservices.inventory.repository.TransferLineItemRepository;
 import com.bcconstructionservices.inventory.repository.WarehouseRepository;
+import com.bcconstructionservices.projects.dto.ProjectExpenseCreateRequest;
+import com.bcconstructionservices.projects.dto.ProjectExpenseResponse;
+import com.bcconstructionservices.projects.entity.ExpenseCategory;
+import com.bcconstructionservices.projects.entity.ProjectStatus;
+import com.bcconstructionservices.projects.exception.ProjectNotEditableException;
+import com.bcconstructionservices.projects.service.ProjectExpenseService;
 import com.bcconstructionservices.user.service.UserLookupHelper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -42,6 +49,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -49,6 +57,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -85,6 +94,8 @@ class TransferBatchServiceTest {
     private CurrentUserService currentUserService;
     @Mock
     private TransferBatchStatusUpdater transferBatchStatusUpdater;
+    @Mock
+    private ProjectExpenseService projectExpenseService;
 
     @InjectMocks
     private TransferBatchService transferBatchService;
@@ -280,6 +291,36 @@ class TransferBatchServiceTest {
                             createRequest(List.of(lineRequest(ITEM_ID, 50)))));
 
             verify(transferBatchRepository, never()).save(any());
+        }
+
+        @Test
+        void shouldThrowInvalidStockOperationExceptionWhenProjectIdSetButNeitherWarehouseIsSite() {
+            // Both origin and destination default to MAIN in setUp().
+            givenValidActiveWarehouses();
+
+            TransferBatchCreateRequest request = createRequest(List.of(lineRequest(ITEM_ID, 50)));
+            request.setProjectId(12L);
+
+            assertThatExceptionOfType(InvalidStockOperationException.class)
+                    .isThrownBy(() -> transferBatchService.createDraft(request));
+
+            verify(transferBatchRepository, never()).save(any());
+        }
+
+        @Test
+        void shouldSaveDraftWithProjectIdWhenDestinationIsSite() {
+            destination.setType(WarehouseType.SITE);
+            givenValidActiveWarehouses();
+            when(itemRepository.findById(ITEM_ID)).thenReturn(Optional.of(item));
+            when(currentUserService.getCurrentUserId()).thenReturn(CURRENT_USER_ID);
+            givenSavesEchoTheirArgument();
+
+            TransferBatchCreateRequest request = createRequest(List.of(lineRequest(ITEM_ID, 50)));
+            request.setProjectId(12L);
+
+            transferBatchService.createDraft(request);
+
+            assertThat(captureSavedBatch().getProjectId()).isEqualTo(12L);
         }
     }
 
@@ -493,6 +534,131 @@ class TransferBatchServiceTest {
             transferBatchService.submit(BATCH_ID);
 
             verifyNoInteractions(materialRequestRepository, materialRequestLineItemRepository);
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // submit — auto-drafted MATERIAL ProjectExpense
+    // ---------------------------------------------------------------
+
+    @Nested
+    class SubmitProjectExpenseTests {
+
+        @Test
+        void shouldNotCallProjectExpenseServiceWhenBatchHasNoProjectId() {
+            TransferLineItem lineA = line(null, item, 50);
+            TransferBatch batch = buildDraftBatchWithLines(List.of(lineA));
+            lineA.setTransferBatch(batch);
+            // projectId left null.
+
+            when(transferBatchRepository.findByIdWithWarehouses(BATCH_ID)).thenReturn(Optional.of(batch));
+            when(transferLineItemRepository.findByTransferBatchId(BATCH_ID)).thenReturn(batch.getLineItems());
+            when(inventoryService.transferWarehouseStock(any(), any(), any(), any()))
+                    .thenReturn(List.of(new StockMovementResponse()));
+            givenSavesEchoTheirArgument();
+
+            transferBatchService.submit(BATCH_ID);
+
+            verifyNoInteractions(projectExpenseService);
+        }
+
+        @Test
+        void shouldCreatePositiveMaterialExpenseWhenDispatchingToASiteWarehouse() {
+            destination.setType(WarehouseType.SITE);
+            item.setDefaultCostPrice(new BigDecimal("230.00"));
+
+            TransferLineItem lineA = line(null, item, 50);
+            TransferBatch batch = buildDraftBatchWithLines(List.of(lineA));
+            lineA.setTransferBatch(batch);
+            batch.setProjectId(12L);
+
+            when(transferBatchRepository.findByIdWithWarehouses(BATCH_ID)).thenReturn(Optional.of(batch));
+            when(transferLineItemRepository.findByTransferBatchId(BATCH_ID)).thenReturn(batch.getLineItems());
+            when(inventoryService.transferWarehouseStock(any(), any(), any(), any()))
+                    .thenReturn(List.of(new StockMovementResponse()));
+            when(projectExpenseService.addExpense(eq(12L), any(ProjectExpenseCreateRequest.class)))
+                    .thenReturn(ProjectExpenseResponse.builder().id(305L).build());
+            givenSavesEchoTheirArgument();
+
+            transferBatchService.submit(BATCH_ID);
+
+            ArgumentCaptor<ProjectExpenseCreateRequest> captor =
+                    ArgumentCaptor.forClass(ProjectExpenseCreateRequest.class);
+            verify(projectExpenseService).addExpense(eq(12L), captor.capture());
+            assertThat(captor.getValue().getCategory()).isEqualTo(ExpenseCategory.MATERIAL);
+            assertThat(captor.getValue().getAmount()).isEqualByComparingTo("11500.00");
+            assertThat(lineA.getProjectExpenseId()).isEqualTo(305L);
+        }
+
+        @Test
+        void shouldCreateNegativeMaterialExpenseWhenPullingOutFromASiteWarehouse() {
+            origin.setType(WarehouseType.SITE);
+            item.setDefaultCostPrice(new BigDecimal("230.00"));
+
+            TransferLineItem lineA = line(null, item, 50);
+            TransferBatch batch = buildDraftBatchWithLines(List.of(lineA));
+            lineA.setTransferBatch(batch);
+            batch.setProjectId(12L);
+
+            when(transferBatchRepository.findByIdWithWarehouses(BATCH_ID)).thenReturn(Optional.of(batch));
+            when(transferLineItemRepository.findByTransferBatchId(BATCH_ID)).thenReturn(batch.getLineItems());
+            when(inventoryService.transferWarehouseStock(any(), any(), any(), any()))
+                    .thenReturn(List.of(new StockMovementResponse()));
+            when(projectExpenseService.addExpense(eq(12L), any(ProjectExpenseCreateRequest.class)))
+                    .thenReturn(ProjectExpenseResponse.builder().id(306L).build());
+            givenSavesEchoTheirArgument();
+
+            transferBatchService.submit(BATCH_ID);
+
+            ArgumentCaptor<ProjectExpenseCreateRequest> captor =
+                    ArgumentCaptor.forClass(ProjectExpenseCreateRequest.class);
+            verify(projectExpenseService).addExpense(eq(12L), captor.capture());
+            assertThat(captor.getValue().getAmount()).isEqualByComparingTo("-11500.00");
+        }
+
+        @Test
+        void shouldThrowInvalidStockOperationExceptionWhenItemHasNoDefaultCostPrice() {
+            destination.setType(WarehouseType.SITE);
+            item.setDefaultCostPrice(null);
+
+            TransferLineItem lineA = line(null, item, 50);
+            TransferBatch batch = buildDraftBatchWithLines(List.of(lineA));
+            lineA.setTransferBatch(batch);
+            batch.setProjectId(12L);
+
+            when(transferBatchRepository.findByIdWithWarehouses(BATCH_ID)).thenReturn(Optional.of(batch));
+            when(transferLineItemRepository.findByTransferBatchId(BATCH_ID)).thenReturn(batch.getLineItems());
+            when(inventoryService.transferWarehouseStock(any(), any(), any(), any()))
+                    .thenReturn(List.of(new StockMovementResponse()));
+
+            assertThatExceptionOfType(InvalidStockOperationException.class)
+                    .isThrownBy(() -> transferBatchService.submit(BATCH_ID));
+
+            verify(transferBatchRepository, never()).save(any());
+        }
+
+        @Test
+        void shouldPropagateProjectNotEditableExceptionAndNeverSaveTheBatch() {
+            destination.setType(WarehouseType.SITE);
+            item.setDefaultCostPrice(new BigDecimal("230.00"));
+
+            TransferLineItem lineA = line(null, item, 50);
+            TransferBatch batch = buildDraftBatchWithLines(List.of(lineA));
+            lineA.setTransferBatch(batch);
+            batch.setProjectId(12L);
+
+            when(transferBatchRepository.findByIdWithWarehouses(BATCH_ID)).thenReturn(Optional.of(batch));
+            when(transferLineItemRepository.findByTransferBatchId(BATCH_ID)).thenReturn(batch.getLineItems());
+            when(inventoryService.transferWarehouseStock(any(), any(), any(), any()))
+                    .thenReturn(List.of(new StockMovementResponse()));
+            when(projectExpenseService.addExpense(eq(12L), any(ProjectExpenseCreateRequest.class)))
+                    .thenThrow(new ProjectNotEditableException(12L, ProjectStatus.COMPLETED));
+
+            assertThatExceptionOfType(ProjectNotEditableException.class)
+                    .isThrownBy(() -> transferBatchService.submit(BATCH_ID));
+
+            verify(transferBatchRepository, never()).save(any());
+            verifyNoInteractions(transferBatchStatusUpdater);
         }
     }
 

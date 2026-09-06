@@ -68,6 +68,7 @@ class TransferBatchMapperTest {
         batch.setStatus(TransferBatchStatus.DRAFT);
         batch.setInitiatedBy(3L);
         batch.setSourceMaterialRequestId(14L);
+        batch.setProjectId(12L);
         batch.setNotes("Weekly resupply for Sta. Maria site");
         batch.setCreatedAt(Instant.parse("2026-07-18T09:15:30Z"));
         batch.setUpdatedAt(Instant.parse("2026-07-18T09:20:00Z"));
@@ -104,6 +105,7 @@ class TransferBatchMapperTest {
             assertThat(response.getInitiatedBy()).isEqualTo(3L);
             assertThat(response.getInitiatedByName()).isEqualTo("Juan Dela Cruz");
             assertThat(response.getSourceMaterialRequestId()).isEqualTo(14L);
+            assertThat(response.getProjectId()).isEqualTo(12L);
             assertThat(response.getNotes()).isEqualTo("Weekly resupply for Sta. Maria site");
             assertThat(response.getCreatedAt()).isEqualTo(Instant.parse("2026-07-18T09:15:30Z"));
             assertThat(response.getUpdatedAt()).isEqualTo(Instant.parse("2026-07-18T09:20:00Z"));
@@ -164,6 +166,7 @@ class TransferBatchMapperTest {
             request.setOriginWarehouseId(1L);
             request.setDestinationWarehouseId(2L);
             request.setSourceMaterialRequestId(14L);
+            request.setProjectId(12L);
             request.setNotes("Weekly resupply for Sta. Maria site");
             request.setLines(List.of(lineRequest));
 
@@ -171,6 +174,7 @@ class TransferBatchMapperTest {
 
             assertThat(entity).isNotNull();
             assertThat(entity.getSourceMaterialRequestId()).isEqualTo(14L);
+            assertThat(entity.getProjectId()).isEqualTo(12L);
             assertThat(entity.getNotes()).isEqualTo("Weekly resupply for Sta. Maria site");
         }
 

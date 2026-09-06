@@ -21,6 +21,7 @@
         <module>user</module>
         <module>equipment</module>
         <module>projects</module>
+        <module>workers</module>
         <!-- add future modules here, e.g. <module>ecommerce</module>, <module>common</module> -->
     </modules>
 	<properties>

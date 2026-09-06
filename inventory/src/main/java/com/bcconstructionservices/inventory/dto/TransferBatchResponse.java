@@ -52,6 +52,9 @@ public class TransferBatchResponse {
     @Schema(description = "Identifier of the MaterialRequest this batch fulfills, if any", example = "14")
     private Long sourceMaterialRequestId;
 
+    @Schema(description = "Identifier of the Project this transfer's cost is attributed to, if any", example = "12")
+    private Long projectId;
+
     @Schema(description = "Optional free-text notes about the transfer", example = "Weekly resupply for Sta. Maria site")
     private String notes;
 

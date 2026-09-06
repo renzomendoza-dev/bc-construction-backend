@@ -52,4 +52,15 @@ public class TransferLineItem {
 
     @Column(name = "notes")
     private String notes;
+
+    /**
+     * Traces this line back to the MATERIAL ProjectExpense it auto-generated
+     * on submit, if the batch's projectId was set. Null until
+     * submit actually runs (a DRAFT line has no expense yet), and stays null
+     * forever if the batch was never project-linked. See TransferBatch's own
+     * javadoc for why this traceability id lives here rather than as a
+     * reverse column on ProjectExpense.
+     */
+    @Column(name = "project_expense_id")
+    private Long projectExpenseId;
 }

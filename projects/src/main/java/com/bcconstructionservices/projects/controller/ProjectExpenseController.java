@@ -23,6 +23,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -67,6 +68,31 @@ public class ProjectExpenseController {
             @Valid @RequestBody ProjectExpenseCreateRequest request) {
         ProjectExpenseResponse response = projectExpenseService.addExpense(projectId, request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    @DeleteMapping("/expenses/{expenseId}")
+    @Operation(
+            summary = "Delete an expense from a project",
+            description = "Only while the project is ACTIVE/ON_HOLD (422 otherwise) — same lock condition as "
+                    + "creating an expense. Also used internally by the workers module to remove the expense an "
+                    + "Attendance record generated, when that Attendance is deleted."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "204", description = "Expense deleted"),
+            @ApiResponse(responseCode = "404", description = "Project or expense not found",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "422", description = "The project is COMPLETED/CANCELLED and can no "
+                    + "longer have expenses removed",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @PreAuthorize("hasRole('PROJECT_EXPENSE_DELETE')")
+    public ResponseEntity<Void> delete(
+            @Parameter(description = "Identifier of the project", example = "12")
+            @PathVariable Long projectId,
+            @Parameter(description = "Identifier of the expense to delete", example = "301")
+            @PathVariable Long expenseId) {
+        projectExpenseService.deleteExpense(projectId, expenseId);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/expenses")

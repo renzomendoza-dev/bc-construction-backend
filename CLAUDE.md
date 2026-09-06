@@ -8,16 +8,20 @@ Spring Security 7 with a Keycloak OAuth2 resource server.
 | Module | Purpose | Depends on |
 |---|---|---|
 | `user` | `AppUser`, admin user management, auth plumbing (`CurrentUserService`, `UserLookupHelper`, `AuditorAwareImpl`) | — |
-| `inventory` | Items, warehouses, stock, purchase receipts, material requests, transfer batches | `user` |
+| `inventory` | Items, warehouses, stock, purchase receipts, material requests, transfer batches | `user`, `projects` |
 | `equipment` | Equipment asset tracking, checkout/check-in, batch assignment/transfer/return | `user`, `inventory` |
 | `sales` | Placeholder — one empty controller, not built out yet | — |
-| `projects` | Project running-expense tracking: `Project` (aggregation root, no site/warehouse link) and `ProjectExpense` (LABOR/MATERIAL/OTHER, entered manually — no `inventory` link yet) | `user` |
+| `projects` | Project running-expense tracking: `Project` (aggregation root, no site/warehouse link) and `ProjectExpense` (LABOR/MATERIAL/OTHER) | `user` |
+| `workers` | Field-labor roster (`Worker`, independent of `AppUser`/Keycloak) and daily `Attendance`, which auto-creates a LABOR `ProjectExpense` | `user`, `projects` |
 | `app` | Aggregator: the actual bootable Spring Boot application, wires every module together | all of the above |
 
-`projects` is deliberately kept to a single dependency (`user`) as part of a broader push to keep
-modules loosely coupled and independently scalable — don't add an `inventory`/`equipment`
-dependency to it without asking first, even for something that seems like an obvious link (e.g.
-linking `MATERIAL` expenses to `PurchaseReceipt`).
+`projects` is deliberately kept independent of every other business module (`user` is its only
+dependency) as part of a broader push to keep modules loosely coupled and independently scalable
+— don't add a dependency **to** `projects` without asking first, even for something that seems
+like an obvious link. `workers` and `inventory` depending **on** `projects` (the reverse
+direction) is the exception that proves the rule: both are real, deliberate write-orchestration
+dependencies (see "Cross-module write orchestration" below), not casual coupling, and `projects`
+itself stays unaware either one exists.
 
 Each module keeps its **own** exception vocabulary and its own `@RestControllerAdvice` scoped to
 `basePackages = "com.bcconstructionservices.<module>.controller"` (e.g. `GlobalExceptionHandler`
@@ -70,6 +74,54 @@ doesn't hold a `Warehouse` (that's `inventory`'s entity). Instead:
 - This does mean the referencing module gains a real Maven dependency on the referenced module
   (e.g. `equipment` depends on `inventory` for exactly this).
 
+## Cross-module write orchestration (-> projects)
+
+The id + LookupHelper pattern above is for a *read*: resolving a display name. Two modules now
+need something more — creating a row must also create/delete a `ProjectExpense` on a different
+module's table, atomically, in the same transaction: `workers.AttendanceService` (a LABOR entry
+per `Attendance`) and `inventory.TransferBatchService` (a MATERIAL entry per line, on submit).
+Established pattern for this kind of cross-module *write*, used identically by both: take a real
+Maven dependency on the owning module (`projects`) and call its existing service method directly
+(`ProjectExpenseService.addExpense`/`deleteExpense`) — reusing that service's own validation
+(project exists, project is `ACTIVE`/`ON_HOLD`) rather than duplicating it. An event-driven
+alternative (`ApplicationEventPublisher`) was considered and rejected the first time this came up
+(for `workers`) and the reasoning still holds for `inventory`: there's no message broker or async
+requirement in this single-JVM modular monolith, and a direct call already mirrors what the
+module boundary would become if these were ever split into separate services — an HTTP call
+standing in for this Java one, same shape, less machinery today. Don't reach for an event bus
+here just because the backend is meant to be microservice-ready eventually; that's premature
+abstraction until there's an actual async/multi-consumer need.
+
+A consequence: exceptions owned by the *called* module (`projects`) can legitimately bubble up
+through the *calling* module's own controllers (e.g. `projects.exception.ProjectNotEditableException`
+from inside `workers.controller.AttendanceController` or `inventory.controller.TransferBatchController`).
+The calling module's own `@RestControllerAdvice` needs an explicit `@ExceptionHandler` for each
+such exception it might see, mapped to the same status code the owning module uses — it won't be
+caught automatically, and letting it fall through to the generic `Exception.class` handler turns
+a 422/404 into a 500. See `WorkersExceptionHandler` and inventory's `GlobalExceptionHandler` for
+the pattern (both handle the identical pair: `projects.exception.ResourceNotFoundException` and
+`ProjectNotEditableException`).
+
+When a reverse traceability id is needed (e.g. so deleting/re-checking the "many" side can find
+what it created on the "one" side), store it on the *dependent* module's own table (e.g.
+`Attendance.projectExpenseId`, `TransferLineItem.projectExpenseId`), not as a new column on the
+owning module's entity — this keeps the FK pointing the same direction as the Maven dependency
+and adds no schema-level dependency back onto the (deliberately more independent) owning module.
+Note this means `ProjectExpense` itself carries no hint of who generated it — that lookup always
+starts from the dependent side (a specific `Attendance` or `TransferLineItem` row), never from
+the expense row outward.
+
+**Real bug this shape caused, fixed — get delete order right**: that traceability column is a
+plain `Long`, not a JPA relation, so Hibernate has no object-graph metadata to sequence deletes
+across it — and the FK is a real, non-deferrable one (Postgres checks it immediately). The
+original `AttendanceService.deleteAttendance` deleted the `ProjectExpense` first, which failed
+with a foreign-key violation (surfaced as an undifferentiated 500) since the `Attendance` row
+still referenced it. **The fix**: validate first (`ProjectExpenseService.assertExpenseDeletable`
+— checks existence/project-match/editable without deleting, so a locked project still leaves
+both rows untouched exactly as before), then delete the *dependent* row, then delete the
+`ProjectExpense`. Any future code that deletes across one of these traceability columns (e.g. if
+deleting a `TransferBatch` with generated expenses is ever supported) needs the same order.
+
 ## HTTP status code conventions (read before guessing one)
 
 This has been a recurring point of friction — codes have **drifted between modules**, and it's
@@ -88,6 +140,11 @@ a deliberate, documented divergence in places, not an oversight:
   operation" (`InvalidEquipmentStatusException`, `NoOpenAssignmentException`,
   `DuplicateAssetTagException`) — because `checkOut()`'s 409 predates the batch/transfer work,
   and staying consistent *within* equipment was judged more important than matching inventory.
+  The **workers** module uses 409 the same way inventory does: `DuplicateAttendanceException`
+  for a second attendance record on the same worker/day — a conflict discovered at operation
+  time, not a wrong-status issue. Workers also uses 400 for `InactiveWorkerException` (recording
+  attendance against a retired worker) — "the right kind of resource, wrong state for this
+  operation," same bucket as inventory's `InactiveResourceException`.
 - **422** — the resource has progressed past an editable/actionable lifecycle stage, in the
   **inventory** module: `ReceiptProcessingException` ("already confirmed"),
   `MaterialRequestNotEditableException`, `TransferBatchNotAwaitingPurchaseException`,
@@ -133,6 +190,11 @@ replacing) the existing single-item endpoints:
   request rather than storing it as its own field, when it can be derived reliably — see
   `EquipmentAssignmentBatch`'s direction, resolved from `destinationWarehouseId`'s `Warehouse.type`
   plus (per line, at submit time) the referenced equipment's current status, not a stored enum.
+  `TransferBatch` derives a direction the same way for its own, separate purpose (auto-drafting a
+  MATERIAL `ProjectExpense` when `projectId` is set): destination `Warehouse.type == SITE` means
+  dispatch (positive amount), origin `Warehouse.type == SITE` means pull-out (negative amount) —
+  see `TransferBatchService.generateProjectExpense`. Also not a stored field, computed fresh at
+  submit time from the same warehouses already loaded for the stock transfer itself.
 
 ## Aggregation-root entities (MaterialRequest, PurchaseOrder) — recompute status cumulatively
 

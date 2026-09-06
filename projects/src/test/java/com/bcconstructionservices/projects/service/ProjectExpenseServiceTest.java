@@ -128,6 +128,91 @@ class ProjectExpenseServiceTest {
     }
 
     // ---------------------------------------------------------------
+    // deleteExpense
+    // ---------------------------------------------------------------
+
+    @Nested
+    class AssertExpenseDeletableTests {
+
+        @Test
+        void shouldReturnTheExpenseWithoutDeletingItWhenProjectIsEditable() {
+            ProjectExpense expense = expense(ExpenseCategory.MATERIAL, "14500.00");
+            expense.setId(301L);
+            when(projectExpenseRepository.findById(301L)).thenReturn(Optional.of(expense));
+            when(projectService.requireEditableProject(PROJECT_ID)).thenReturn(project);
+
+            ProjectExpense result = projectExpenseService.assertExpenseDeletable(PROJECT_ID, 301L);
+
+            assertThat(result).isEqualTo(expense);
+            verify(projectExpenseRepository, never()).delete(any());
+        }
+
+        @Test
+        void shouldPropagateProjectNotEditableExceptionWithoutDeleting() {
+            ProjectExpense expense = expense(ExpenseCategory.MATERIAL, "14500.00");
+            expense.setId(301L);
+            when(projectExpenseRepository.findById(301L)).thenReturn(Optional.of(expense));
+            when(projectService.requireEditableProject(PROJECT_ID))
+                    .thenThrow(new ProjectNotEditableException(PROJECT_ID, ProjectStatus.COMPLETED));
+
+            assertThatExceptionOfType(ProjectNotEditableException.class)
+                    .isThrownBy(() -> projectExpenseService.assertExpenseDeletable(PROJECT_ID, 301L));
+            verify(projectExpenseRepository, never()).delete(any());
+        }
+    }
+
+    @Nested
+    class DeleteExpenseTests {
+
+        @Test
+        void shouldDeleteExpenseWhenProjectIsEditable() {
+            ProjectExpense expense = expense(ExpenseCategory.MATERIAL, "14500.00");
+            expense.setId(301L);
+            when(projectExpenseRepository.findById(301L)).thenReturn(Optional.of(expense));
+            when(projectService.requireEditableProject(PROJECT_ID)).thenReturn(project);
+
+            projectExpenseService.deleteExpense(PROJECT_ID, 301L);
+
+            verify(projectExpenseRepository).delete(expense);
+        }
+
+        @Test
+        void shouldThrowResourceNotFoundExceptionWhenExpenseDoesNotExist() {
+            when(projectExpenseRepository.findById(999L)).thenReturn(Optional.empty());
+
+            assertThatExceptionOfType(ResourceNotFoundException.class)
+                    .isThrownBy(() -> projectExpenseService.deleteExpense(PROJECT_ID, 999L));
+        }
+
+        @Test
+        void shouldThrowResourceNotFoundExceptionWhenExpenseBelongsToADifferentProject() {
+            Project otherProject = new Project();
+            otherProject.setId(999L);
+            ProjectExpense expense = expense(ExpenseCategory.MATERIAL, "14500.00");
+            expense.setId(301L);
+            expense.setProject(otherProject);
+            when(projectExpenseRepository.findById(301L)).thenReturn(Optional.of(expense));
+
+            assertThatExceptionOfType(ResourceNotFoundException.class)
+                    .isThrownBy(() -> projectExpenseService.deleteExpense(PROJECT_ID, 301L));
+            verify(projectExpenseRepository, never()).delete(any());
+        }
+
+        @Test
+        void shouldPropagateProjectNotEditableExceptionFromProjectService() {
+            ProjectExpense expense = expense(ExpenseCategory.MATERIAL, "14500.00");
+            expense.setId(301L);
+            when(projectExpenseRepository.findById(301L)).thenReturn(Optional.of(expense));
+            when(projectService.requireEditableProject(PROJECT_ID))
+                    .thenThrow(new ProjectNotEditableException(PROJECT_ID, ProjectStatus.COMPLETED));
+
+            assertThatExceptionOfType(ProjectNotEditableException.class)
+                    .isThrownBy(() -> projectExpenseService.deleteExpense(PROJECT_ID, 301L));
+            verify(projectExpenseRepository, never()).delete(any());
+        }
+    }
+
+    // ---------------------------------------------------------------
     // search
     // ---------------------------------------------------------------
 
