@@ -36,6 +36,11 @@
             <artifactId>sales</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <dependency>
+            <groupId>com.bcconstructionservices</groupId>
+            <artifactId>projects</artifactId>
+            <version>${project.version}</version>
+        </dependency>
     </dependencies>
 
     <build>

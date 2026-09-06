@@ -11,14 +11,33 @@ Spring Security 7 with a Keycloak OAuth2 resource server.
 | `inventory` | Items, warehouses, stock, purchase receipts, material requests, transfer batches | `user` |
 | `equipment` | Equipment asset tracking, checkout/check-in, batch assignment/transfer/return | `user`, `inventory` |
 | `sales` | Placeholder — one empty controller, not built out yet | — |
+| `projects` | Project running-expense tracking: `Project` (aggregation root, no site/warehouse link) and `ProjectExpense` (LABOR/MATERIAL/OTHER, entered manually — no `inventory` link yet) | `user` |
 | `app` | Aggregator: the actual bootable Spring Boot application, wires every module together | all of the above |
+
+`projects` is deliberately kept to a single dependency (`user`) as part of a broader push to keep
+modules loosely coupled and independently scalable — don't add an `inventory`/`equipment`
+dependency to it without asking first, even for something that seems like an obvious link (e.g.
+linking `MATERIAL` expenses to `PurchaseReceipt`).
 
 Each module keeps its **own** exception vocabulary and its own `@RestControllerAdvice` scoped to
 `basePackages = "com.bcconstructionservices.<module>.controller"` (e.g. `GlobalExceptionHandler`
-in inventory, `EquipmentExceptionHandler` in equipment) — never an unscoped bare
-`@RestControllerAdvice`. An unscoped one's catch-all `Exception.class` handler would apply to
-every controller in the app once modules are wired together, colliding with every other
-module's own catch-all.
+in inventory, `EquipmentExceptionHandler` in equipment, `ProjectsExceptionHandler` in projects) —
+never an unscoped bare `@RestControllerAdvice`. An unscoped one's catch-all `Exception.class`
+handler would apply to every controller in the app once modules are wired together, colliding
+with every other module's own catch-all.
+
+**Name every `@Component`/`@Service`/`@Repository`/`@RestControllerAdvice`/`@Configuration`
+class uniquely across the whole reactor, not just within its own module.** Spring's default
+bean name is derived from the simple class name, not the package — two same-named annotated
+classes in different modules (e.g. `inventory.exception.GlobalExceptionHandler` and a
+hypothetical `projects.exception.GlobalExceptionHandler`) throw
+`ConflictingBeanDefinitionException` the moment both are wired into the same `app` context,
+even though each module's own tests pass fine in isolation (no test boots the full multi-module
+`app` context, so this class of bug is invisible until a real app startup). This is exactly why
+`inventory`'s handler is the plain `GlobalExceptionHandler` but every module added after it
+(`EquipmentExceptionHandler`, `ProjectsExceptionHandler`) uses a module-prefixed name instead —
+don't reuse the generic name for a new module's handler (or any other annotated class) without
+checking it's not already taken somewhere else in the reactor.
 
 ## Database & Flyway migrations
 
@@ -74,7 +93,10 @@ a deliberate, documented divergence in places, not an oversight:
   `MaterialRequestNotEditableException`, `TransferBatchNotAwaitingPurchaseException`,
   `TransferBatchNotDeletableException`. This is inventory's "wrong status" convention — do not
   assume it applies to equipment, and do not silently reconcile the two modules without asking;
-  the divergence is intentional.
+  the divergence is intentional. The **projects** module follows this same 422 convention
+  (`ProjectNotEditableException`, for update/complete/add-expense once a project is
+  `COMPLETED`/`CANCELLED`) — it was judged closer in nature to inventory's domain than
+  equipment's.
 
 When adding a new "wrong state" case, match the convention of the module you're in, and if a
 choice is genuinely ambiguous, say so explicitly and pick one rather than guessing — the
@@ -181,6 +203,12 @@ entity and then queries again afterward, apply the same one-line warm-up call.
   not just `-pl equipment` — otherwise Maven reuses a stale local-repo jar for the dependency
   (e.g. `inventory`) and compilation fails with "cannot find symbol" for a class that very much
   exists.
+- `app`'s `ComponentScanBeanNameUniquenessTest` replicates Spring's component-scan bean naming
+  across every module's classes (no context boot, no DB) specifically to catch a
+  `ConflictingBeanDefinitionException` from two modules' same-named `@Component`-family classes
+  before it reaches real app startup — see that test's own javadoc and the naming-uniqueness
+  rule above. No `@DataJpaTest`/`@WebMvcTest` slice test catches this, since none of them load
+  every module together the way the real app does.
 
 ## Documentation expectations
 
