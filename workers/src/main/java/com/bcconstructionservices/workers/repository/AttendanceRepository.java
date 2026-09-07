@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
+import java.util.List;
 
 public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
 
@@ -33,4 +34,23 @@ public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
                              @Param("dateFrom") LocalDate dateFrom,
                              @Param("dateTo") LocalDate dateTo,
                              Pageable pageable);
+
+    /**
+     * One row per (date, project) with any recorded attendance in range —
+     * feeds GET /api/attendance/calendar. Reflects only what's actually been
+     * recorded, deliberately not blended with WorkerProjectAssignment's
+     * assigned-crew size (see AttendanceCalendarEntry's own javadoc).
+     */
+    @Query("""
+            SELECT a.attendanceDate AS date, a.projectId AS projectId, COUNT(DISTINCT a.worker.id) AS workerCount
+            FROM Attendance a
+            WHERE (:projectId IS NULL OR a.projectId = :projectId)
+              AND (:dateFrom IS NULL OR a.attendanceDate >= :dateFrom)
+              AND (:dateTo IS NULL OR a.attendanceDate <= :dateTo)
+            GROUP BY a.attendanceDate, a.projectId
+            ORDER BY a.attendanceDate ASC
+            """)
+    List<AttendanceCalendarRow> calendarSummary(@Param("projectId") Long projectId,
+                                                 @Param("dateFrom") LocalDate dateFrom,
+                                                 @Param("dateTo") LocalDate dateTo);
 }

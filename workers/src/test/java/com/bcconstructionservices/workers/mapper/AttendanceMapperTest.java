@@ -14,6 +14,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -53,6 +54,8 @@ class AttendanceMapperTest {
         attendance.setDaysPresent(new BigDecimal("1.0"));
         attendance.setRateSnapshot(new BigDecimal("800.00"));
         attendance.setNotes("Rebar tying");
+        attendance.setTimeIn(LocalTime.of(7, 0));
+        attendance.setTimeOut(LocalTime.of(16, 0));
         attendance.setProjectExpenseId(305L);
         attendance.setRecordedBy(1L);
         attendance.setCreatedAt(Instant.parse("2026-09-05T09:15:30Z"));
@@ -80,6 +83,8 @@ class AttendanceMapperTest {
             assertThat(response.getRateSnapshot()).isEqualByComparingTo("800.00");
             assertThat(response.getAmount()).isEqualByComparingTo("800.00");
             assertThat(response.getNotes()).isEqualTo("Rebar tying");
+            assertThat(response.getTimeIn()).isEqualTo(LocalTime.of(7, 0));
+            assertThat(response.getTimeOut()).isEqualTo(LocalTime.of(16, 0));
             assertThat(response.getProjectExpenseId()).isEqualTo(305L);
             assertThat(response.getRecordedBy()).isEqualTo(1L);
             assertThat(response.getRecordedByName()).isEqualTo("Renzo Mendoza");
@@ -133,6 +138,8 @@ class AttendanceMapperTest {
             assertThat(entity.getId()).isNull();
             assertThat(entity.getWorker()).isNull();
             assertThat(entity.getRateSnapshot()).isNull();
+            assertThat(entity.getTimeIn()).isNull();
+            assertThat(entity.getTimeOut()).isNull();
             assertThat(entity.getProjectExpenseId()).isNull();
             assertThat(entity.getRecordedBy()).isNull();
             assertThat(entity.getCreatedAt()).isNull();

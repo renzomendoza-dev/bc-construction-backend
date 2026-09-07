@@ -68,6 +68,18 @@ public class WorkersExceptionHandler {
         return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(DuplicateActiveAssignmentException.class)
+    public ResponseEntity<ErrorResponse> handleDuplicateActiveAssignment(
+            DuplicateActiveAssignmentException ex, HttpServletRequest request) {
+        return buildResponse(HttpStatus.CONFLICT, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(InvalidAttendanceBatchRequestException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidAttendanceBatchRequest(
+            InvalidAttendanceBatchRequestException ex, HttpServletRequest request) {
+        return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
     /**
      * Thrown by {@code @PreAuthorize} when an authenticated caller lacks the
      * required permission. Handled explicitly here — otherwise it would be

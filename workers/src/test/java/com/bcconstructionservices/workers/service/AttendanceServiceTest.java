@@ -6,14 +6,20 @@ import com.bcconstructionservices.projects.entity.ExpenseCategory;
 import com.bcconstructionservices.projects.entity.ProjectStatus;
 import com.bcconstructionservices.projects.exception.ProjectNotEditableException;
 import com.bcconstructionservices.projects.service.ProjectExpenseService;
+import com.bcconstructionservices.projects.service.ProjectLookupHelper;
+import com.bcconstructionservices.workers.dto.AttendanceBatchCreateRequest;
+import com.bcconstructionservices.workers.dto.AttendanceBatchLineRequest;
+import com.bcconstructionservices.workers.dto.AttendanceBatchResponse;
 import com.bcconstructionservices.workers.dto.AttendanceCreateRequest;
 import com.bcconstructionservices.workers.dto.AttendanceResponse;
 import com.bcconstructionservices.workers.entity.Attendance;
 import com.bcconstructionservices.workers.entity.Worker;
 import com.bcconstructionservices.workers.exception.DuplicateAttendanceException;
 import com.bcconstructionservices.workers.exception.InactiveWorkerException;
+import com.bcconstructionservices.workers.exception.InvalidAttendanceBatchRequestException;
 import com.bcconstructionservices.workers.exception.ResourceNotFoundException;
 import com.bcconstructionservices.workers.mapper.AttendanceMapper;
+import com.bcconstructionservices.workers.repository.AttendanceCalendarRow;
 import com.bcconstructionservices.workers.repository.AttendanceRepository;
 import com.bcconstructionservices.workers.repository.WorkerRepository;
 import org.junit.jupiter.api.Nested;
@@ -27,6 +33,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalTime;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -54,6 +62,8 @@ class AttendanceServiceTest {
     private AttendanceMapper attendanceMapper;
     @Mock
     private ProjectExpenseService projectExpenseService;
+    @Mock
+    private ProjectLookupHelper projectLookupHelper;
 
     @InjectMocks
     private AttendanceService attendanceService;
@@ -233,6 +243,173 @@ class AttendanceServiceTest {
             // untouched, matching the pre-existing external behavior.
             verify(attendanceRepository, never()).delete(any());
             verify(projectExpenseService, never()).deleteExpense(any(), any());
+        }
+    }
+
+    @Nested
+    class CreateBatchTests {
+
+        private AttendanceBatchCreateRequest batchRequest(AttendanceBatchLineRequest... lines) {
+            return AttendanceBatchCreateRequest.builder()
+                    .projectId(PROJECT_ID)
+                    .date(LocalDate.of(2026, 9, 7))
+                    .entries(List.of(lines))
+                    .build();
+        }
+
+        private AttendanceBatchLineRequest line(Long workerId, LocalTime timeIn, LocalTime timeOut) {
+            return AttendanceBatchLineRequest.builder()
+                    .workerId(workerId).timeIn(timeIn).timeOut(timeOut).build();
+        }
+
+        @Test
+        void shouldCreateAttendanceWithDaysPresentDerivedFromTimeInAndTimeOut() {
+            Worker worker = activeWorker();
+            when(workerRepository.findById(WORKER_ID)).thenReturn(Optional.of(worker));
+            when(attendanceRepository.existsByWorkerIdAndAttendanceDate(WORKER_ID, LocalDate.of(2026, 9, 7)))
+                    .thenReturn(false);
+            when(projectExpenseService.addExpense(eq(PROJECT_ID), any(ProjectExpenseCreateRequest.class)))
+                    .thenReturn(ProjectExpenseResponse.builder().id(305L).build());
+            when(attendanceRepository.save(any(Attendance.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(attendanceMapper.toResponse(any(Attendance.class)))
+                    .thenReturn(AttendanceResponse.builder().id(ATTENDANCE_ID).build());
+
+            AttendanceBatchResponse response = attendanceService.createBatch(
+                    batchRequest(line(WORKER_ID, LocalTime.of(7, 0), LocalTime.of(11, 0)))); // 4 hours
+
+            assertThat(response.getCreated()).hasSize(1);
+            assertThat(response.getSkipped()).isEmpty();
+
+            ArgumentCaptor<Attendance> captor = ArgumentCaptor.forClass(Attendance.class);
+            verify(attendanceRepository).save(captor.capture());
+            assertThat(captor.getValue().getDaysPresent()).isEqualByComparingTo("0.50");
+            assertThat(captor.getValue().getTimeIn()).isEqualTo(LocalTime.of(7, 0));
+            assertThat(captor.getValue().getTimeOut()).isEqualTo(LocalTime.of(11, 0));
+
+            ArgumentCaptor<ProjectExpenseCreateRequest> expenseCaptor =
+                    ArgumentCaptor.forClass(ProjectExpenseCreateRequest.class);
+            verify(projectExpenseService).addExpense(eq(PROJECT_ID), expenseCaptor.capture());
+            assertThat(expenseCaptor.getValue().getAmount()).isEqualByComparingTo("400.00");
+        }
+
+        @Test
+        void shouldCapDaysPresentAtOneForMoreThanEightHours() {
+            Worker worker = activeWorker();
+            when(workerRepository.findById(WORKER_ID)).thenReturn(Optional.of(worker));
+            when(attendanceRepository.existsByWorkerIdAndAttendanceDate(WORKER_ID, LocalDate.of(2026, 9, 7)))
+                    .thenReturn(false);
+            when(projectExpenseService.addExpense(eq(PROJECT_ID), any(ProjectExpenseCreateRequest.class)))
+                    .thenReturn(ProjectExpenseResponse.builder().id(305L).build());
+            when(attendanceRepository.save(any(Attendance.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(attendanceMapper.toResponse(any(Attendance.class)))
+                    .thenReturn(AttendanceResponse.builder().id(ATTENDANCE_ID).build());
+
+            attendanceService.createBatch(
+                    batchRequest(line(WORKER_ID, LocalTime.of(6, 0), LocalTime.of(18, 0)))); // 12 hours
+
+            ArgumentCaptor<Attendance> captor = ArgumentCaptor.forClass(Attendance.class);
+            verify(attendanceRepository).save(captor.capture());
+            assertThat(captor.getValue().getDaysPresent()).isEqualByComparingTo("1.00");
+        }
+
+        @Test
+        void shouldSkipAnEntryAlreadyRecordedForThatDateWithoutFailingTheBatch() {
+            when(attendanceRepository.existsByWorkerIdAndAttendanceDate(WORKER_ID, LocalDate.of(2026, 9, 7)))
+                    .thenReturn(true);
+
+            AttendanceBatchResponse response = attendanceService.createBatch(
+                    batchRequest(line(WORKER_ID, LocalTime.of(7, 0), LocalTime.of(16, 0))));
+
+            assertThat(response.getCreated()).isEmpty();
+            assertThat(response.getSkipped()).hasSize(1);
+            assertThat(response.getSkipped().get(0).getWorkerId()).isEqualTo(WORKER_ID);
+            verifyNoInteractions(projectExpenseService);
+            verify(workerRepository, never()).findById(any());
+        }
+
+        @Test
+        void shouldThrowInvalidAttendanceBatchRequestExceptionWhenTimeOutIsNotAfterTimeIn() {
+            when(attendanceRepository.existsByWorkerIdAndAttendanceDate(WORKER_ID, LocalDate.of(2026, 9, 7)))
+                    .thenReturn(false);
+
+            assertThatExceptionOfType(InvalidAttendanceBatchRequestException.class)
+                    .isThrownBy(() -> attendanceService.createBatch(
+                            batchRequest(line(WORKER_ID, LocalTime.of(16, 0), LocalTime.of(7, 0)))));
+            verifyNoInteractions(projectExpenseService);
+        }
+
+        @Test
+        void shouldThrowInvalidAttendanceBatchRequestExceptionWhenAWorkerIdAppearsTwice() {
+            AttendanceBatchLineRequest first = line(WORKER_ID, LocalTime.of(7, 0), LocalTime.of(11, 0));
+            AttendanceBatchLineRequest second = line(WORKER_ID, LocalTime.of(12, 0), LocalTime.of(16, 0));
+
+            assertThatExceptionOfType(InvalidAttendanceBatchRequestException.class)
+                    .isThrownBy(() -> attendanceService.createBatch(batchRequest(first, second)));
+            verifyNoInteractions(attendanceRepository, projectExpenseService);
+        }
+
+        @Test
+        void shouldThrowInactiveWorkerExceptionForAnInactiveWorkerEntry() {
+            Worker inactiveWorker = activeWorker();
+            inactiveWorker.setActive(false);
+            when(attendanceRepository.existsByWorkerIdAndAttendanceDate(WORKER_ID, LocalDate.of(2026, 9, 7)))
+                    .thenReturn(false);
+            when(workerRepository.findById(WORKER_ID)).thenReturn(Optional.of(inactiveWorker));
+
+            assertThatExceptionOfType(InactiveWorkerException.class)
+                    .isThrownBy(() -> attendanceService.createBatch(
+                            batchRequest(line(WORKER_ID, LocalTime.of(7, 0), LocalTime.of(16, 0)))));
+            verifyNoInteractions(projectExpenseService);
+        }
+
+        @Test
+        void shouldThrowResourceNotFoundExceptionWhenAWorkerDoesNotExist() {
+            when(attendanceRepository.existsByWorkerIdAndAttendanceDate(999L, LocalDate.of(2026, 9, 7)))
+                    .thenReturn(false);
+            when(workerRepository.findById(999L)).thenReturn(Optional.empty());
+
+            assertThatExceptionOfType(ResourceNotFoundException.class)
+                    .isThrownBy(() -> attendanceService.createBatch(
+                            batchRequest(line(999L, LocalTime.of(7, 0), LocalTime.of(16, 0)))));
+        }
+    }
+
+    @Nested
+    class GetCalendarTests {
+
+        @Test
+        void shouldResolveProjectNameOncePerDistinctProjectAcrossMultipleDates() {
+            AttendanceCalendarRow row1 = mockRow(LocalDate.of(2026, 9, 1), PROJECT_ID, 6);
+            AttendanceCalendarRow row2 = mockRow(LocalDate.of(2026, 9, 2), PROJECT_ID, 4);
+            when(attendanceRepository.calendarSummary(null, null, null)).thenReturn(List.of(row1, row2));
+            when(projectLookupHelper.resolveProjectName(PROJECT_ID)).thenReturn("Sta. Maria Warehouse Expansion");
+
+            var entries = attendanceService.getCalendar(null, null, null);
+
+            assertThat(entries).hasSize(2);
+            assertThat(entries.get(0).getDate()).isEqualTo(LocalDate.of(2026, 9, 1));
+            assertThat(entries.get(0).getWorkerCount()).isEqualTo(6);
+            assertThat(entries.get(0).getProjectName()).isEqualTo("Sta. Maria Warehouse Expansion");
+            assertThat(entries.get(1).getWorkerCount()).isEqualTo(4);
+            verify(projectLookupHelper, org.mockito.Mockito.times(1)).resolveProjectName(PROJECT_ID);
+        }
+
+        @Test
+        void shouldReturnEmptyListWhenNoAttendanceRecorded() {
+            when(attendanceRepository.calendarSummary(PROJECT_ID, null, null)).thenReturn(List.of());
+
+            var entries = attendanceService.getCalendar(PROJECT_ID, null, null);
+
+            assertThat(entries).isEmpty();
+            verifyNoInteractions(projectLookupHelper);
+        }
+
+        private AttendanceCalendarRow mockRow(LocalDate date, Long projectId, long workerCount) {
+            AttendanceCalendarRow row = org.mockito.Mockito.mock(AttendanceCalendarRow.class);
+            when(row.getDate()).thenReturn(date);
+            when(row.getProjectId()).thenReturn(projectId);
+            when(row.getWorkerCount()).thenReturn(workerCount);
+            return row;
         }
     }
 }

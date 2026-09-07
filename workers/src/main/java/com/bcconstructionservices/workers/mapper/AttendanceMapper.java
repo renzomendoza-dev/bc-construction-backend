@@ -27,6 +27,8 @@ public interface AttendanceMapper {
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "worker", ignore = true)
     @Mapping(target = "rateSnapshot", ignore = true)
+    @Mapping(target = "timeIn", ignore = true) // only ever set via the batch endpoint
+    @Mapping(target = "timeOut", ignore = true)
     @Mapping(target = "projectExpenseId", ignore = true)
     @Mapping(target = "recordedBy", ignore = true)
     @Mapping(target = "createdAt", ignore = true)

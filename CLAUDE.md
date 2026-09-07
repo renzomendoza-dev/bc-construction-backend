@@ -58,6 +58,21 @@ override in `application-dev.yaml` — never add that location to the prod profi
 Cross-module DB foreign keys are fine (all modules share one physical database) even when the
 referencing Java entity can't hold a `@ManyToOne` to the referenced module's entity — see below.
 
+**Write migration SQL portable to H2's PostgreSQL-compatibility mode, not just real Postgres** —
+every module's test suite runs its migrations against H2 in `MODE=PostgreSQL` (see the Testing
+section), and `ddl-auto: validate` means the test schema must match the real one exactly, so
+there's no option to diverge. Two real syntax gaps hit while building `workers`' `V32`:
+- A partial unique index (`CREATE UNIQUE INDEX ... WHERE active = true`) — real Postgres accepts
+  it, H2's PostgreSQL mode rejects it with a syntax error. No portable equivalent; the constraint
+  has to be enforced at the application layer only (see `WorkerProjectAssignment`'s own javadoc
+  for the resulting "no DB-level enforcement" trade-off).
+- Comma-separated multi-column `ALTER TABLE t ADD COLUMN a, ADD COLUMN b` — also rejected by H2's
+  PostgreSQL mode. Split into one `ALTER TABLE ... ADD COLUMN` statement per column instead;
+  Postgres accepts that form too, so there's no downside to always writing it this way.
+
+Run the module's tests (which apply every migration against a real H2 instance) after writing a
+new migration, before assuming it's portable — don't just eyeball the SQL for Postgres validity.
+
 ## Cross-module entity references
 
 A module never takes a JPA `@ManyToOne` to another module's entity — e.g. `equipment.Equipment`
@@ -195,6 +210,16 @@ replacing) the existing single-item endpoints:
   dispatch (positive amount), origin `Warehouse.type == SITE` means pull-out (negative amount) —
   see `TransferBatchService.generateProjectExpense`. Also not a stored field, computed fresh at
   submit time from the same warehouses already loaded for the stock transfer itself.
+
+`POST /api/attendance/batch` (`workers`) is a lighter-weight variant of this shape worth
+distinguishing: it processes many `Attendance` rows in one transaction but has **no persisted
+batch entity at all** — no `DRAFT`/`SUBMITTED`/`COMPLETED` lifecycle, nothing to look up by a
+batch id afterward. Don't add one unless a real need for it shows up; the all-or-nothing
+transaction plus a `created`/`skipped` response is enough for what this endpoint does. It also
+diverges from `TransferBatch`/`EquipmentAssignmentBatch` on one more point: a single expected,
+non-error condition (a worker already having a record for that date) is *skipped and reported*
+rather than aborting the batch — atomicity there applies only to genuine failures, not to that
+case. See `AttendanceService.createBatch`'s own javadoc.
 
 ## Aggregation-root entities (MaterialRequest, PurchaseOrder) — recompute status cumulatively
 

@@ -23,6 +23,7 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 
 /**
  * One worker's presence on one project on one day. {@code worker} is a real
@@ -83,6 +84,17 @@ public class Attendance {
 
     @Column(name = "notes")
     private String notes;
+
+    /**
+     * Only ever set via the batch attendance endpoint (AttendanceService#createBatch),
+     * which derives daysPresent from these — a single POST /api/attendance
+     * record leaves both null, exactly as before this field existed.
+     */
+    @Column(name = "time_in")
+    private LocalTime timeIn;
+
+    @Column(name = "time_out")
+    private LocalTime timeOut;
 
     @Column(name = "project_expense_id")
     private Long projectExpenseId;

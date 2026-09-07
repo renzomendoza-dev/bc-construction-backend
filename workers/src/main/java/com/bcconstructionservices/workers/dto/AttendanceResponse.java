@@ -10,6 +10,7 @@ import lombok.Setter;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 
 @Getter
 @Setter
@@ -48,6 +49,14 @@ public class AttendanceResponse {
 
     @Schema(description = "Optional notes", example = "Rebar tying, Building A")
     private String notes;
+
+    @Schema(description = "Clock-in time — only set for a record created via the batch attendance endpoint",
+            example = "07:00:00")
+    private LocalTime timeIn;
+
+    @Schema(description = "Clock-out time — only set for a record created via the batch attendance endpoint",
+            example = "16:00:00")
+    private LocalTime timeOut;
 
     @Schema(description = "Identifier of the LABOR ProjectExpense this attendance record generated", example = "305")
     private Long projectExpenseId;

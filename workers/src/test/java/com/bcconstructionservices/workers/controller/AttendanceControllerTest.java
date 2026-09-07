@@ -2,11 +2,17 @@ package com.bcconstructionservices.workers.controller;
 
 import com.bcconstructionservices.projects.entity.ProjectStatus;
 import com.bcconstructionservices.projects.exception.ProjectNotEditableException;
+import com.bcconstructionservices.workers.dto.AttendanceBatchCreateRequest;
+import com.bcconstructionservices.workers.dto.AttendanceBatchLineRequest;
+import com.bcconstructionservices.workers.dto.AttendanceBatchResponse;
+import com.bcconstructionservices.workers.dto.AttendanceBatchSkippedEntry;
+import com.bcconstructionservices.workers.dto.AttendanceCalendarEntry;
 import com.bcconstructionservices.workers.dto.AttendanceCreateRequest;
 import com.bcconstructionservices.workers.dto.AttendanceResponse;
 import com.bcconstructionservices.workers.dto.PageResponse;
 import com.bcconstructionservices.workers.exception.DuplicateAttendanceException;
 import com.bcconstructionservices.workers.exception.InactiveWorkerException;
+import com.bcconstructionservices.workers.exception.InvalidAttendanceBatchRequestException;
 import com.bcconstructionservices.workers.exception.ResourceNotFoundException;
 import com.bcconstructionservices.workers.service.AttendanceService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -24,6 +30,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.Arrays;
 import java.util.List;
 
@@ -169,6 +176,116 @@ class AttendanceControllerTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(validCreateRequest())))
                     .andExpect(status().isUnauthorized());
+        }
+    }
+
+    @Nested
+    class CreateBatchTests {
+
+        private AttendanceBatchCreateRequest validBatchRequest() {
+            return AttendanceBatchCreateRequest.builder()
+                    .projectId(12L)
+                    .date(LocalDate.of(2026, 9, 7))
+                    .entries(List.of(AttendanceBatchLineRequest.builder()
+                            .workerId(1L).timeIn(LocalTime.of(7, 0)).timeOut(LocalTime.of(16, 0)).build()))
+                    .build();
+        }
+
+        @Test
+        void shouldReturn201WithCreatedAndSkippedLists() throws Exception {
+            when(attendanceService.createBatch(any(AttendanceBatchCreateRequest.class)))
+                    .thenReturn(AttendanceBatchResponse.builder()
+                            .created(List.of(sampleResponse(501L)))
+                            .skipped(List.of(AttendanceBatchSkippedEntry.builder()
+                                    .workerId(2L).reason("Attendance already recorded for this date").build()))
+                            .build());
+
+            mockMvc.perform(post("/api/attendance/batch")
+                            .with(authenticatedJwt("ATTENDANCE_BATCH_CREATE"))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(validBatchRequest())))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.created[0].id").value(501))
+                    .andExpect(jsonPath("$.skipped[0].workerId").value(2));
+        }
+
+        @Test
+        void shouldReturn400WhenEntriesIsEmpty() throws Exception {
+            AttendanceBatchCreateRequest request = AttendanceBatchCreateRequest.builder()
+                    .projectId(12L).date(LocalDate.of(2026, 9, 7)).entries(List.of()).build();
+
+            mockMvc.perform(post("/api/attendance/batch")
+                            .with(authenticatedJwt("ATTENDANCE_BATCH_CREATE"))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void shouldReturn400WhenTimeOutIsNotAfterTimeIn() throws Exception {
+            when(attendanceService.createBatch(any(AttendanceBatchCreateRequest.class)))
+                    .thenThrow(new InvalidAttendanceBatchRequestException("timeOut must be after timeIn"));
+
+            mockMvc.perform(post("/api/attendance/batch")
+                            .with(authenticatedJwt("ATTENDANCE_BATCH_CREATE"))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(validBatchRequest())))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void shouldReturn422WhenProjectIsNotEditable() throws Exception {
+            when(attendanceService.createBatch(any(AttendanceBatchCreateRequest.class)))
+                    .thenThrow(new ProjectNotEditableException(12L, ProjectStatus.COMPLETED));
+
+            mockMvc.perform(post("/api/attendance/batch")
+                            .with(authenticatedJwt("ATTENDANCE_BATCH_CREATE"))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(validBatchRequest())))
+                    .andExpect(status().isUnprocessableEntity());
+        }
+
+        @Test
+        void shouldReturn403WhenCallerLacksAttendanceBatchCreatePermission() throws Exception {
+            mockMvc.perform(post("/api/attendance/batch")
+                            .with(authenticatedJwt())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(validBatchRequest())))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        void shouldReturn401WhenUnauthenticated() throws Exception {
+            mockMvc.perform(post("/api/attendance/batch")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(validBatchRequest())))
+                    .andExpect(status().isUnauthorized());
+        }
+    }
+
+    @Nested
+    class CalendarTests {
+
+        @Test
+        void shouldReturn200WithCalendarEntries() throws Exception {
+            when(attendanceService.getCalendar(any(), any(), any())).thenReturn(List.of(
+                    AttendanceCalendarEntry.builder()
+                            .date(LocalDate.of(2026, 9, 1)).projectId(12L)
+                            .projectName("Sta. Maria Warehouse Expansion").workerCount(6).build()));
+
+            mockMvc.perform(get("/api/attendance/calendar").with(authenticatedJwt()))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0].projectId").value(12))
+                    .andExpect(jsonPath("$[0].workerCount").value(6));
+        }
+
+        @Test
+        void shouldReturn200WithEmptyListWhenNothingRecorded() throws Exception {
+            when(attendanceService.getCalendar(any(), any(), any())).thenReturn(List.of());
+
+            mockMvc.perform(get("/api/attendance/calendar").with(authenticatedJwt()))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$").isEmpty());
         }
     }
 

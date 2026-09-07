@@ -113,4 +113,51 @@ class AttendanceRepositoryTest {
             assertThat(page.getContent()).hasSize(1);
         }
     }
+
+    @Nested
+    class CalendarSummaryTests {
+
+        @Test
+        void shouldGroupByDateAndProjectCountingDistinctWorkers() {
+            Worker secondWorker = Worker.builder().name("Jun Santos").dailyRate(new BigDecimal("650.00")).build();
+            entityManager.persist(secondWorker);
+            entityManager.flush();
+
+            attendanceRepository.save(buildAttendance(LocalDate.of(2026, 9, 1)));
+            Attendance secondWorkerAttendance = Attendance.builder()
+                    .worker(secondWorker)
+                    .projectId(project.getId())
+                    .attendanceDate(LocalDate.of(2026, 9, 1))
+                    .daysPresent(new BigDecimal("1.0"))
+                    .rateSnapshot(secondWorker.getDailyRate())
+                    .build();
+            attendanceRepository.save(secondWorkerAttendance);
+
+            var rows = attendanceRepository.calendarSummary(null, null, null);
+
+            assertThat(rows).hasSize(1);
+            assertThat(rows.get(0).getDate()).isEqualTo(LocalDate.of(2026, 9, 1));
+            assertThat(rows.get(0).getProjectId()).isEqualTo(project.getId());
+            assertThat(rows.get(0).getWorkerCount()).isEqualTo(2);
+        }
+
+        @Test
+        void shouldFilterByProjectAndDateRange() {
+            attendanceRepository.save(buildAttendance(LocalDate.of(2026, 9, 1)));
+            attendanceRepository.save(buildAttendance(LocalDate.of(2026, 9, 20)));
+
+            var rows = attendanceRepository.calendarSummary(
+                    project.getId(), LocalDate.of(2026, 9, 5), LocalDate.of(2026, 9, 25));
+
+            assertThat(rows).hasSize(1);
+            assertThat(rows.get(0).getDate()).isEqualTo(LocalDate.of(2026, 9, 20));
+        }
+
+        @Test
+        void shouldReturnEmptyWhenNothingRecorded() {
+            var rows = attendanceRepository.calendarSummary(null, null, null);
+
+            assertThat(rows).isEmpty();
+        }
+    }
 }

@@ -1,5 +1,8 @@
 package com.bcconstructionservices.workers.controller;
 
+import com.bcconstructionservices.workers.dto.AttendanceBatchCreateRequest;
+import com.bcconstructionservices.workers.dto.AttendanceBatchResponse;
+import com.bcconstructionservices.workers.dto.AttendanceCalendarEntry;
 import com.bcconstructionservices.workers.dto.AttendanceCreateRequest;
 import com.bcconstructionservices.workers.dto.AttendanceResponse;
 import com.bcconstructionservices.workers.dto.ErrorResponse;
@@ -32,6 +35,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
+import java.util.List;
 
 /**
  * REST endpoints for daily attendance. Recording an entry auto-creates a
@@ -69,6 +73,58 @@ public class AttendanceController {
     public ResponseEntity<AttendanceResponse> create(@Valid @RequestBody AttendanceCreateRequest request) {
         AttendanceResponse response = attendanceService.createAttendance(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    @PostMapping("/batch")
+    @Operation(
+            summary = "Record attendance for multiple workers on one project/day in a single batch",
+            description = "Derives daysPresent per entry from timeIn/timeOut (capped at one standard 8-hour day) "
+                    + "using the same dailyRate * daysPresent expense formula as the single-record endpoint. "
+                    + "A worker who already has a record for this date is skipped (not an error) and reported in "
+                    + "the response — revisiting an already-recorded day is a normal, expected use of the "
+                    + "calendar. Any other failure (inactive worker, worker/project not found, timeOut not after "
+                    + "timeIn, a duplicate workerId within the same request, or the project being "
+                    + "COMPLETED/CANCELLED) aborts the whole batch — same all-or-nothing transaction as "
+                    + "POST /api/inventory/transfer-batches/{id}/submit."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "201", description = "Batch processed — see the response for which "
+                    + "entries were created vs. skipped",
+                    content = @Content(schema = @Schema(implementation = AttendanceBatchResponse.class))),
+            @ApiResponse(responseCode = "400", description = "Request body failed validation, an entry's timeOut "
+                    + "isn't after its timeIn, a workerId appears more than once, or a worker is inactive",
+                    content = @Content(schema = @Schema(implementation = ValidationErrorResponse.class))),
+            @ApiResponse(responseCode = "404", description = "A worker or the project was not found",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "422", description = "The project is COMPLETED/CANCELLED",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @PreAuthorize("hasRole('ATTENDANCE_BATCH_CREATE')")
+    public ResponseEntity<AttendanceBatchResponse> createBatch(
+            @Valid @RequestBody AttendanceBatchCreateRequest request) {
+        AttendanceBatchResponse response = attendanceService.createBatch(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    @GetMapping("/calendar")
+    @Operation(
+            summary = "Get a calendar summary of recorded attendance",
+            description = "One entry per (date, project) with any recorded attendance in range, plus a distinct-worker "
+                    + "count — shaped for calendar rendering. Reflects only what's actually been recorded, not "
+                    + "assigned-but-not-yet-recorded crew size."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Calendar entries",
+                    content = @Content(schema = @Schema(implementation = AttendanceCalendarEntry.class)))
+    })
+    public ResponseEntity<List<AttendanceCalendarEntry>> calendar(
+            @Parameter(description = "Filter by project", example = "12")
+            @RequestParam(required = false) Long projectId,
+            @Parameter(description = "Filter to date >= this date", example = "2026-09-01")
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFrom,
+            @Parameter(description = "Filter to date <= this date", example = "2026-09-30")
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateTo) {
+        return ResponseEntity.ok(attendanceService.getCalendar(projectId, dateFrom, dateTo));
     }
 
     @DeleteMapping("/{id}")
