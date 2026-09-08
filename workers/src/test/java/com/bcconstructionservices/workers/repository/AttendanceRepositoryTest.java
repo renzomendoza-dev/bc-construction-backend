@@ -19,6 +19,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 @DataJpaTest
@@ -158,6 +159,35 @@ class AttendanceRepositoryTest {
             var rows = attendanceRepository.calendarSummary(null, null, null);
 
             assertThat(rows).isEmpty();
+        }
+
+        /**
+         * Regression test for a real 500 on the live dev server:
+         * AttendanceService.getCalendar fires a second query (ProjectLookupHelper)
+         * per row while iterating calendarSummary's results — a shape no
+         * other test happened to cover, since this class never touches
+         * ProjectLookupHelper and AttendanceServiceTest used Mockito-mocked
+         * rows rather than genuine Hibernate projection results (see
+         * AttendanceCalendarRow's own javadoc for the full write-up).
+         * Replicates that interleaving directly against the real query
+         * results using the EntityManager already available here, without
+         * needing WorkersTestApplication to also scan projects' beans.
+         */
+        @Test
+        void shouldSurviveFiringASecondQueryPerRowWhileIteratingResults() {
+            attendanceRepository.save(buildAttendance(LocalDate.of(2026, 9, 1)));
+
+            var rows = attendanceRepository.calendarSummary(null, null, null);
+
+            assertThatCode(() -> {
+                for (var row : rows) {
+                    // Mirrors AttendanceService.getCalendar calling
+                    // ProjectLookupHelper.resolveProjectName per row — a
+                    // second JPA query fired mid-iteration over the first
+                    // query's projection results.
+                    entityManager.find(Project.class, row.getProjectId());
+                }
+            }).doesNotThrowAnyException();
         }
     }
 }

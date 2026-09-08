@@ -272,6 +272,34 @@ directly with no caching of its own, unlike `AuditorAwareImpl`.
 When adding a new method that updates one of these three (or any future) audited+cascade=ALL
 entity and then queries again afterward, apply the same one-line warm-up call.
 
+## Interface projections + GROUP BY/aggregate + a second query per row
+
+`GET /api/attendance/calendar` 500'd on the live dev server (not reproduced by `workers`' own
+`@DataJpaTest`) from `AttendanceRepository.calendarSummary`'s original shape: a Spring Data
+**interface** projection (`AttendanceCalendarRow` as an interface, matched by JPQL `SELECT ... AS
+alias`) over a query with `GROUP BY` + `COUNT(DISTINCT ...)`, whose results
+`AttendanceService.getCalendar` then iterates while firing a *second* query per row
+(`ProjectLookupHelper.resolveProjectName`). That combination — interface projection, aggregate/
+`GROUP BY`, and a further query interleaved while reading the projection's getters — is a known
+rough spot in some Hibernate versions. **The fix**: use a JPQL constructor expression instead
+(`SELECT new fully.qualified.Type(...)`, with the projection as a plain class rather than an
+interface) — it materializes a real object up front, with no proxy or lingering tie to the
+persistence context, sidestepping the whole class of issue regardless of the exact mechanism.
+Prefer this over an interface projection any time the query has `GROUP BY`/an aggregate *and*
+the caller does further per-row query work on the results.
+
+**Why no test caught it — and what does**: three different tests each covered a different slice
+without covering the actual failing shape together: the repository test exercised the real
+projection but never fired a second query against it; the service test exercised the
+per-row-second-query logic but with Mockito-*mocked* projection rows, not genuine Hibernate
+projection results; the controller test mocked the service entirely. None of the three combined
+"real projection results" with "a second real query fired while iterating them." When a
+repository method's results get iterated with further queries per row (exactly the shape
+`AttendanceService.getCalendar` and `AttendanceRepositoryTest`'s
+`shouldSurviveFiringASecondQueryPerRowWhileIteratingResults` cover), add at least one test that
+does both together against a real `@DataJpaTest` context — a service-level test with mocked
+projection rows cannot catch this class of bug.
+
 ## Testing
 
 - Service-layer: Mockito unit tests (`@ExtendWith(MockitoExtension.class)`), manual per-test

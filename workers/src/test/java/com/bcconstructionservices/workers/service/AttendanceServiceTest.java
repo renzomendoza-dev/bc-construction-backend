@@ -379,8 +379,8 @@ class AttendanceServiceTest {
 
         @Test
         void shouldResolveProjectNameOncePerDistinctProjectAcrossMultipleDates() {
-            AttendanceCalendarRow row1 = mockRow(LocalDate.of(2026, 9, 1), PROJECT_ID, 6);
-            AttendanceCalendarRow row2 = mockRow(LocalDate.of(2026, 9, 2), PROJECT_ID, 4);
+            AttendanceCalendarRow row1 = new AttendanceCalendarRow(LocalDate.of(2026, 9, 1), PROJECT_ID, 6);
+            AttendanceCalendarRow row2 = new AttendanceCalendarRow(LocalDate.of(2026, 9, 2), PROJECT_ID, 4);
             when(attendanceRepository.calendarSummary(null, null, null)).thenReturn(List.of(row1, row2));
             when(projectLookupHelper.resolveProjectName(PROJECT_ID)).thenReturn("Sta. Maria Warehouse Expansion");
 
@@ -402,14 +402,6 @@ class AttendanceServiceTest {
 
             assertThat(entries).isEmpty();
             verifyNoInteractions(projectLookupHelper);
-        }
-
-        private AttendanceCalendarRow mockRow(LocalDate date, Long projectId, long workerCount) {
-            AttendanceCalendarRow row = org.mockito.Mockito.mock(AttendanceCalendarRow.class);
-            when(row.getDate()).thenReturn(date);
-            when(row.getProjectId()).thenReturn(projectId);
-            when(row.getWorkerCount()).thenReturn(workerCount);
-            return row;
         }
     }
 }

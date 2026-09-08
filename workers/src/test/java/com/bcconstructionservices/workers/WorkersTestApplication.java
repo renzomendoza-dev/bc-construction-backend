@@ -14,16 +14,34 @@ import org.springframework.security.web.SecurityFilterChain;
 import static org.mockito.Mockito.mock;
 import static org.springframework.security.config.Customizer.withDefaults;
 
-@SpringBootApplication(scanBasePackages = "com.bcconstructionservices.workers")
+// Scans com.bcconstructionservices.projects too (not just workers) — needed
+// so a real @SpringBootTest context can wire the actual ProjectLookupHelper/
+// ProjectService/ProjectExpenseService/ProjectRepository beans workers'
+// services call directly (see the repo-root CLAUDE.md's "Cross-module write
+// orchestration"), rather than every test either mocking them or bypassing
+// them via direct EntityManager persistence — the exact gap that let a real
+// GET /api/attendance/calendar 500 ship without any test catching it (see
+// AttendanceServiceCalendarIntegrationTest). Safe for @DataJpaTest slices:
+// those restrict to JPA-only beans regardless of scan breadth, so this
+// doesn't spin up projects' controllers/services there.
+@SpringBootApplication(scanBasePackages = {
+        "com.bcconstructionservices.workers",
+        "com.bcconstructionservices.projects"
+})
 @EntityScan(basePackages = {
         "com.bcconstructionservices.workers.entity",
         "com.bcconstructionservices.user.entity",
-        // Project (projects module) is persisted directly by repository-slice
-        // tests exercising attendance.project_id's real FK — workers.entity
-        // itself only ever holds a plain Long id for it, never a @ManyToOne,
-        // so this scan entry exists purely for the tests.
         "com.bcconstructionservices.projects.entity"
 })
+// Deliberately NO @EnableJpaRepositories here (see CrossModuleJpaRepositoriesTestConfig
+// for why it can't live on this shared class): Boot's auto-configured JPA
+// repository scanning only activates when a DataSource/EntityManagerFactory
+// bean is actually present, so it's silently a no-op for @WebMvcTest (which
+// never wires one) — but an explicit @EnableJpaRepositories annotation is
+// unconditional and fires regardless of test slice, so putting it directly on
+// this class broke every @WebMvcTest in the module with
+// NoSuchBeanDefinitionException: No bean named 'entityManagerFactory'
+// available (confirmed via the actual full-reactor stack trace, not guessed).
 public class WorkersTestApplication {
 
     /**
