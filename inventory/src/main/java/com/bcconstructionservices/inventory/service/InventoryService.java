@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Service layer owning all InventoryStock quantity changes and the
@@ -31,11 +32,11 @@ import java.util.Objects;
  * {@link #toLowStockResponse} stays as a private method — see the note there.
  *
  * <p>Design note on the "single mutation point" business rule: InventoryStock.quantity
- * is only ever changed inside {@link #mutateQuantity}, a private helper used by both
- * {@link #adjustStock} and {@link #transferStock}. Other services must call one of
- * this class's public methods rather than touching InventoryStock or StockMovement
- * repositories directly — this class is the single owner of that invariant, not one
- * specific method.
+ * is only ever changed inside {@link #applyChange}, always on a row this transaction
+ * has locked first ({@link #lockStock}), so concurrent changes can't overwrite each
+ * other. Other services must call one of this class's public methods rather than
+ * touching InventoryStock or StockMovement repositories directly — this class is the
+ * single owner of that invariant, not one specific method.
  *
  * <p>Why transferStock doesn't literally call adjustStock(): StockMovement has a single
  * `warehouse` foreign key, so one row can only describe a move within one warehouse
@@ -110,7 +111,8 @@ public class InventoryService {
         boolean increase = (type == MovementType.IN || type == MovementType.ADJUSTMENT);
         boolean allowAutoCreate = (type == MovementType.IN);
 
-        mutateQuantity(item, warehouse, location, increase, allowAutoCreate, request.getQuantity());
+        applyChange(lockStock(item.getId(), warehouse.getId(), idOf(location), allowAutoCreate),
+                increase, request.getQuantity());
 
         boolean outgoing = (type == MovementType.OUT || type == MovementType.TRANSFER);
         StockMovement movement = StockMovement.builder()
@@ -175,10 +177,24 @@ public class InventoryService {
         StorageLocation fromLocation = resolveLocation(request.getFromLocationId(), fromWarehouse);
         StorageLocation toLocation = resolveLocation(request.getToLocationId(), toWarehouse);
 
-        // Decrement source: must already have a tracked, sufficient balance.
-        mutateQuantity(item, fromWarehouse, fromLocation, false, false, request.getQuantity());
-        // Increment destination: first stock at a new location starts from zero.
-        mutateQuantity(item, toWarehouse, toLocation, true, true, request.getQuantity());
+        // Lock both rows in the global lock order (not "from, then to"), so two
+        // opposite-direction transfers can't deadlock. The source must already
+        // exist; the destination is created at zero if this is its first stock.
+        Long[] fromKey = {fromWarehouse.getId(), idOf(fromLocation)};
+        Long[] toKey = {toWarehouse.getId(), idOf(toLocation)};
+        InventoryStock fromStock;
+        InventoryStock toStock;
+        if (LOCK_ORDER.compare(fromKey, toKey) < 0) {
+            fromStock = lockStock(item.getId(), fromKey[0], fromKey[1], false);
+            toStock = lockStock(item.getId(), toKey[0], toKey[1], true);
+        } else {
+            toStock = lockStock(item.getId(), toKey[0], toKey[1], true);
+            fromStock = lockStock(item.getId(), fromKey[0], fromKey[1], false);
+        }
+
+        // Decrement source: must have a sufficient balance.
+        applyChange(fromStock, false, request.getQuantity());
+        applyChange(toStock, true, request.getQuantity());
 
         if (sameWarehouse) {
             StockMovement movement = StockMovement.builder()
@@ -283,11 +299,16 @@ public class InventoryService {
             throw new InactiveResourceException("Warehouse", toWarehouse.getId());
         }
 
-        List<InventoryStock> originStocks = inventoryStockRepository
-                .findAllByItemAndWarehouse(itemId, fromWarehouseId).stream()
-                .sorted(Comparator.comparing(
-                        stock -> stock.getLocation() == null ? -1L : stock.getLocation().getId()))
-                .toList();
+        // Global lock order: lower warehouse id first. The destination is a
+        // single no-location row; the origin rows come back locked, already
+        // in drain order (no-location bucket first, then by location id).
+        boolean destinationFirst = toWarehouseId < fromWarehouseId;
+        InventoryStock destinationStock = destinationFirst ? lockStock(itemId, toWarehouseId, null, true) : null;
+        List<InventoryStock> originStocks =
+                inventoryStockRepository.findAllByItemAndWarehouseForUpdate(itemId, fromWarehouseId);
+        if (!destinationFirst) {
+            destinationStock = lockStock(itemId, toWarehouseId, null, true);
+        }
 
         int totalAvailable = originStocks.stream().mapToInt(InventoryStock::getQuantity).sum();
         if (totalAvailable < quantity) {
@@ -304,7 +325,7 @@ public class InventoryService {
                 continue;
             }
             int drain = Math.min(remaining, stock.getQuantity());
-            mutateQuantity(item, fromWarehouse, stock.getLocation(), false, false, drain);
+            applyChange(stock, false, drain);
             movements.add(StockMovement.builder()
                     .item(item)
                     .warehouse(fromWarehouse)
@@ -318,7 +339,7 @@ public class InventoryService {
             remaining -= drain;
         }
 
-        mutateQuantity(item, toWarehouse, null, true, true, quantity);
+        applyChange(destinationStock, true, quantity);
         movements.add(StockMovement.builder()
                 .item(item)
                 .warehouse(toWarehouse)
@@ -351,44 +372,59 @@ public class InventoryService {
     // --- Shared mutation logic ---------------------------------------------------
 
     /**
-     * The single place InventoryStock.quantity is read-modified-written. Both
-     * adjustStock and transferStock funnel their actual balance changes through here.
+     * Locks one stock row for the rest of the transaction (SELECT ... FOR
+     * UPDATE), creating it at quantity 0 first if it's missing and
+     * createIfMissing allows. A concurrent change to the same row waits until
+     * this transaction ends, so every read-modify-write sees the latest
+     * committed quantity — without the lock, two overlapping changes both
+     * read the same starting quantity and one silently overwrote the other.
+     * Creation is atomic (insertIfAbsent), so concurrent first stock-ins
+     * can't create duplicate rows.
      *
-     * @param increase                 whether this call adds to the balance (true) or subtracts (false)
-     * @param allowAutoCreateIfMissing whether a missing row should be created at quantity 0
-     *                                 before applying the change, or treated as not-found
+     * <p>Deadlock avoidance: every caller acquiring more than one stock lock
+     * does so in one global order — item id, then warehouse id, then location
+     * (no-location bucket first, then by id). See transferStock and
+     * transferWarehouseStock, and the item-ordered line loops in
+     * TransferBatchService.submit and PurchaseReceiptService.confirmPurchaseReceipt.
      */
-    private void mutateQuantity(Item item, Warehouse warehouse, StorageLocation location,
-                                boolean increase, boolean allowAutoCreateIfMissing, Integer quantity) {
-        Long locationId = location != null ? location.getId() : null;
-        InventoryStock stock = inventoryStockRepository
-                .findByItemAndWarehouseAndLocation(item.getId(), warehouse.getId(), locationId)
-                .orElse(null);
-
-        if (stock == null) {
-            if (!allowAutoCreateIfMissing) {
-                throw new ResourceNotFoundException(noStockMessage(item.getId(), warehouse.getId(), locationId));
-            }
-            stock = InventoryStock.builder()
-                    .item(item)
-                    .warehouse(warehouse)
-                    .location(location)
-                    .quantity(0)
-                    .build();
+    private InventoryStock lockStock(Long itemId, Long warehouseId, Long locationId, boolean createIfMissing) {
+        Optional<InventoryStock> stock = inventoryStockRepository.findForUpdate(itemId, warehouseId, locationId);
+        if (stock.isEmpty() && createIfMissing) {
+            inventoryStockRepository.insertIfAbsent(itemId, warehouseId, locationId);
+            stock = inventoryStockRepository.findForUpdate(itemId, warehouseId, locationId);
         }
+        return stock.orElseThrow(() -> new ResourceNotFoundException(noStockMessage(itemId, warehouseId, locationId)));
+    }
 
+    /**
+     * The single place InventoryStock.quantity is changed. The row must
+     * already be locked by this transaction (lockStock or
+     * findAllByItemAndWarehouseForUpdate).
+     *
+     * @param increase whether this call adds to the balance (true) or subtracts (false)
+     */
+    private void applyChange(InventoryStock stock, boolean increase, int quantity) {
         if (increase) {
             stock.setQuantity(stock.getQuantity() + quantity);
         } else {
             int available = stock.getQuantity();
             if (available - quantity < 0) {
-                throw new InsufficientStockException(item.getId(), warehouse.getId(), quantity, available);
+                throw new InsufficientStockException(
+                        stock.getItem().getId(), stock.getWarehouse().getId(), quantity, available);
             }
             stock.setQuantity(available - quantity);
         }
-
         inventoryStockRepository.save(stock);
     }
+
+    private static Long idOf(StorageLocation location) {
+        return location != null ? location.getId() : null;
+    }
+
+    /** Global stock-lock order within one item: warehouse id, then location (none first, then by id). */
+    private static final Comparator<Long[]> LOCK_ORDER = Comparator
+            .<Long[], Long>comparing(key -> key[0])
+            .thenComparing(key -> key[1], Comparator.nullsFirst(Comparator.naturalOrder()));
 
     private StorageLocation resolveLocation(Long locationId, Warehouse warehouse) {
         if (locationId == null) {
@@ -442,9 +478,11 @@ public class InventoryService {
      */
     @Transactional
     public StockLevelResponse updateReorderThreshold(ReorderThresholdRequest request) {
+        // Locked like a quantity change: Hibernate's UPDATE writes every column,
+        // so an unlocked threshold change could overwrite a concurrent quantity
+        // change with the stale quantity it read.
         InventoryStock stock = inventoryStockRepository
-                .findByItemAndWarehouseAndLocation(
-                        request.getItemId(), request.getWarehouseId(), request.getLocationId())
+                .findForUpdate(request.getItemId(), request.getWarehouseId(), request.getLocationId())
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "No inventory stock found for item " + request.getItemId()
                                 + " at warehouse " + request.getWarehouseId()

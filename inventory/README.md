@@ -261,7 +261,7 @@ app:
 
 ## Database migrations
 
-Flyway migrations live in `src/main/resources/db/migration`, `V2` through `V31` (module-local —
+Flyway migrations live in `src/main/resources/db/migration`, `V2` through `V34` (module-local —
 the full version sequence is shared and global across all modules, so this module doesn't own
 every number), covering items, item images, suppliers, item-supplier links, warehouses (`type`
 `MAIN`/`SITE` included from `V6`), storage locations, inventory stock, stock movements
@@ -271,7 +271,20 @@ request tables (transfer_batch's status CHECK already allows `AWAITING_PURCHASE`
 `purchase_order_line` plus `purchase_receipt.purchase_order_id`, and (`V31`)
 `transfer_batch.project_id` plus `transfer_line_item.project_expense_id` (real FKs into the
 `projects` module's tables — added as a later migration rather than folded into `V17`/`V18`
-since `project` doesn't exist until `V27`).
+since `project` doesn't exist until `V27`). (`V34`) replaces `inventory_stock`'s unique constraint
+with a `NULLS NOT DISTINCT` one, so the no-location bucket can't be duplicated either — it fails
+if duplicates already exist; see the query in the migration's header.
+
+## Concurrent stock changes
+
+Every stock quantity change locks the stock rows it touches for the rest of its transaction, so
+simultaneous adjustments, transfers, batch submits and receipt confirmations queue up rather
+than overwriting each other's quantities or overselling. Missing rows are created atomically, so
+two first stock-ins of the same item can't produce duplicate rows. Locks are always taken in the
+same order, so opposite-direction transfers can't deadlock. In the unlikely case Postgres still
+aborts one on a lock conflict, the endpoint returns **409 "nothing was saved, retry"**. See the
+repo-root `CLAUDE.md`'s "Stock quantities: lock the row before changing it" for the rules any new
+stock code must follow.
 Dev-only demo data seeds live separately under `app/src/main/resources/db/dev-data` and are only
 loaded when the `dev` Spring profile's `flyway.locations` override is active — never in prod.
 

@@ -3,6 +3,7 @@ package com.bcconstructionservices.inventory.exception;
 import com.bcconstructionservices.inventory.dto.ErrorResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -57,6 +58,21 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleInsufficientStock(
             InsufficientStockException ex, HttpServletRequest request) {
         return buildResponse(HttpStatus.CONFLICT, ex.getMessage(), request);
+    }
+
+    /**
+     * Stock changes lock their rows (see InventoryService.lockStock) in one
+     * global order, which should rule out deadlocks. If Postgres still aborts
+     * a transaction on a lock conflict, nothing was saved — every stock
+     * operation is all-or-nothing — so this is a retryable 409, not a 500.
+     */
+    @ExceptionHandler(PessimisticLockingFailureException.class)
+    public ResponseEntity<ErrorResponse> handleLockConflict(
+            PessimisticLockingFailureException ex, HttpServletRequest request) {
+        log.warn("Stock lock conflict on {} {}: {}", request.getMethod(), request.getRequestURI(), ex.getMessage());
+        return buildResponse(HttpStatus.CONFLICT,
+                "This stock was being changed by another request at the same moment. "
+                        + "Nothing was saved; please retry.", request);
     }
 
     @ExceptionHandler(InvalidStockOperationException.class)

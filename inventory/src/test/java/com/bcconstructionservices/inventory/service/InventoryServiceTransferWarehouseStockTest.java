@@ -118,14 +118,21 @@ class InventoryServiceTransferWarehouseStockTest {
         lenient().when(warehouseRepository.findById(TO_WAREHOUSE_ID)).thenReturn(java.util.Optional.of(toWarehouse));
     }
 
+    /** Origin rows as the locked query returns them: already in drain order. */
     private void givenOriginStocks(InventoryStock... stocks) {
-        when(inventoryStockRepository.findAllByItemAndWarehouse(ITEM_ID, FROM_WAREHOUSE_ID))
+        when(inventoryStockRepository.findAllByItemAndWarehouseForUpdate(ITEM_ID, FROM_WAREHOUSE_ID))
                 .thenReturn(List.of(stocks));
     }
 
+    /**
+     * No destination row yet: the service inserts one at zero, then re-reads
+     * (and locks) it. It's locked before the origin balance is checked, so
+     * even insufficient-stock tests reach it.
+     */
     private void givenNoExistingDestinationStock() {
-        lenient().when(inventoryStockRepository.findByItemAndWarehouseAndLocation(ITEM_ID, TO_WAREHOUSE_ID, null))
-                .thenReturn(java.util.Optional.empty());
+        lenient().when(inventoryStockRepository.findForUpdate(ITEM_ID, TO_WAREHOUSE_ID, null))
+                .thenReturn(java.util.Optional.empty())
+                .thenReturn(java.util.Optional.of(stock(600L, toWarehouse, null, 0)));
     }
 
     private void givenSavesEchoTheirArgument() {
@@ -153,8 +160,6 @@ class InventoryServiceTransferWarehouseStockTest {
         void shouldDebitTheNoLocationBucketWhenItAloneCoversTheQuantity() {
             givenValidActiveReferences();
             givenOriginStocks(stock(500L, fromWarehouse, null, 100));
-            when(inventoryStockRepository.findByItemAndWarehouseAndLocation(ITEM_ID, FROM_WAREHOUSE_ID, null))
-                    .thenReturn(java.util.Optional.of(stock(500L, fromWarehouse, null, 100)));
             givenNoExistingDestinationStock();
             givenSavesEchoTheirArgument();
 
@@ -180,8 +185,6 @@ class InventoryServiceTransferWarehouseStockTest {
             StorageLocation binA1 = location(10L, fromWarehouse, "A1");
             givenValidActiveReferences();
             givenOriginStocks(stock(500L, fromWarehouse, binA1, 50));
-            when(inventoryStockRepository.findByItemAndWarehouseAndLocation(ITEM_ID, FROM_WAREHOUSE_ID, 10L))
-                    .thenReturn(java.util.Optional.of(stock(500L, fromWarehouse, binA1, 50)));
             givenNoExistingDestinationStock();
             givenSavesEchoTheirArgument();
 
@@ -204,14 +207,10 @@ class InventoryServiceTransferWarehouseStockTest {
             InventoryStock a2Stock = stock(502L, fromWarehouse, binA2, 20);
 
             givenValidActiveReferences();
-            // Deliberately returned out of drain order to prove the service sorts.
-            givenOriginStocks(a2Stock, noLocationStock, a1Stock);
-            when(inventoryStockRepository.findByItemAndWarehouseAndLocation(ITEM_ID, FROM_WAREHOUSE_ID, null))
-                    .thenReturn(java.util.Optional.of(noLocationStock));
-            when(inventoryStockRepository.findByItemAndWarehouseAndLocation(ITEM_ID, FROM_WAREHOUSE_ID, 10L))
-                    .thenReturn(java.util.Optional.of(a1Stock));
-            when(inventoryStockRepository.findByItemAndWarehouseAndLocation(ITEM_ID, FROM_WAREHOUSE_ID, 11L))
-                    .thenReturn(java.util.Optional.of(a2Stock));
+            // Drain order comes from the locked query's ORDER BY (verified
+            // against Postgres in InventoryStockRepositoryTest); the service
+            // drains in the order it's given.
+            givenOriginStocks(noLocationStock, a1Stock, a2Stock);
             givenNoExistingDestinationStock();
             givenSavesEchoTheirArgument();
 
@@ -265,8 +264,6 @@ class InventoryServiceTransferWarehouseStockTest {
         void shouldDepositTheFullQuantityIntoDestinationsNoLocationBucketAsOneMovement() {
             givenValidActiveReferences();
             givenOriginStocks(stock(500L, fromWarehouse, null, 100));
-            when(inventoryStockRepository.findByItemAndWarehouseAndLocation(ITEM_ID, FROM_WAREHOUSE_ID, null))
-                    .thenReturn(java.util.Optional.of(stock(500L, fromWarehouse, null, 100)));
             givenNoExistingDestinationStock();
             givenSavesEchoTheirArgument();
 
@@ -291,8 +288,6 @@ class InventoryServiceTransferWarehouseStockTest {
         void shouldReturnResponsesMappedFromEverySavedMovement() {
             givenValidActiveReferences();
             givenOriginStocks(stock(500L, fromWarehouse, null, 100));
-            when(inventoryStockRepository.findByItemAndWarehouseAndLocation(ITEM_ID, FROM_WAREHOUSE_ID, null))
-                    .thenReturn(java.util.Optional.of(stock(500L, fromWarehouse, null, 100)));
             givenNoExistingDestinationStock();
             givenSavesEchoTheirArgument();
 
@@ -321,6 +316,7 @@ class InventoryServiceTransferWarehouseStockTest {
             givenOriginStocks(
                     stock(500L, fromWarehouse, null, 5),
                     stock(501L, fromWarehouse, binA1, 10));
+            givenNoExistingDestinationStock();
 
             assertThatExceptionOfType(InsufficientStockException.class)
                     .isThrownBy(() -> inventoryService.transferWarehouseStock(
@@ -339,6 +335,7 @@ class InventoryServiceTransferWarehouseStockTest {
         void shouldThrowInsufficientStockExceptionWhenNoStockRowsExistAtAll() {
             givenValidActiveReferences();
             givenOriginStocks();
+            givenNoExistingDestinationStock();
 
             assertThatExceptionOfType(InsufficientStockException.class)
                     .isThrownBy(() -> inventoryService.transferWarehouseStock(

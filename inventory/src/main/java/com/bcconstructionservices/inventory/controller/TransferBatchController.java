@@ -104,7 +104,9 @@ public class TransferBatchController {
             @ApiResponse(responseCode = "404", description = "Transfer batch not found",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
             @ApiResponse(responseCode = "409", description = "Insufficient stock at the origin warehouse to "
-                    + "cover one of the batch's lines. The batch's status is also set to AWAITING_PURCHASE.",
+                    + "cover one of the batch's lines. The batch's status is also set to AWAITING_PURCHASE. "
+                    + "Rarely, instead: another request was changing the same stock at the same moment - "
+                    + "nothing was saved and the batch stays DRAFT, retry.",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     @PreAuthorize("hasRole('TRANSFER_BATCH_SUBMIT')")

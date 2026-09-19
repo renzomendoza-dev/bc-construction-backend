@@ -129,8 +129,13 @@ class InventoryStockRepositoryTest {
                     .isInstanceOf(DataIntegrityViolationException.class);
         }
 
+        /**
+         * V34's NULLS NOT DISTINCT: the no-location bucket is unique too. V8's
+         * plain UNIQUE treated NULL as distinct from NULL and allowed this,
+         * which concurrent first stock-ins really did exploit.
+         */
         @Test
-        void shouldHandleSameItemAndWarehouseWithNullLocationInBothRows() {
+        void shouldRejectASecondNoLocationRowForTheSameItemAndWarehouse() {
             Item item = persistItem("SKU-802", "Gravel 3/4 Minus");
             Warehouse warehouse = persistWarehouse("WH-802", "Warehouse 802");
 
@@ -139,32 +144,62 @@ class InventoryStockRepositoryTest {
 
             InventoryStock secondNullLocationRow = stock(item, warehouse, null, 60);
 
-            // DESIGN NOTE (observed behavior, not a guess): standard SQL
-            // semantics (NULL <> NULL) mean a composite UNIQUE constraint
-            // does NOT treat two rows that are both NULL in location_id as
-            // conflicting - this holds for PostgreSQL (without NULLS NOT
-            // DISTINCT), H2, and MySQL alike. So this save is
-            // expected to SUCCEED, meaning the DB constraint alone does
-            // NOT prevent two "warehouse-level" (no specific location)
-            // stock rows for the same item+warehouse from coexisting.
-            //
-            // This matters: the real InventoryStockRepository.java uploaded
-            // earlier in this codebase has findByItemAndWarehouseAndLocation
-            // explicitly handle null-location matching in its JPQL
-            // ("(:locationId IS NULL AND s.location IS NULL)") rather than
-            // relying on "location.id = :locationId" - which is *only*
-            // necessary because "=" against NULL never matches in SQL. That
-            // confirms the team is already working around related NULL
-            // semantics at the query layer. If "at most one warehouse-level
-            // row per item+warehouse" is meant to be a hard invariant, this
-            // test shows it is currently enforced only by application-level
-            // lookup-before-insert logic (e.g. in InventoryService), not by
-            // this DB constraint - which leaves a race-condition window
-            // under concurrent requests. Consider a partial unique index
-            // (e.g. Postgres "WHERE location_id IS NULL") if that gap needs
-            // closing at the DB level.
-            assertThatCode(() -> inventoryStockRepository.saveAndFlush(secondNullLocationRow))
-                    .doesNotThrowAnyException();
+            assertThatThrownBy(() -> inventoryStockRepository.saveAndFlush(secondNullLocationRow))
+                    .isInstanceOf(DataIntegrityViolationException.class);
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // insertIfAbsent (atomic find-or-create)
+    // ---------------------------------------------------------------
+
+    @Nested
+    class InsertIfAbsentTests {
+
+        @Test
+        void shouldCreateTheNoLocationRowAtZeroWhenMissing() {
+            Item item = persistItem("SKU-810", "Tie Wire #16");
+            Warehouse warehouse = persistWarehouse("WH-810", "Warehouse 810");
+
+            int inserted = inventoryStockRepository.insertIfAbsent(item.getId(), warehouse.getId(), null);
+
+            assertThat(inserted).isEqualTo(1);
+            assertThat(inventoryStockRepository.findForUpdate(item.getId(), warehouse.getId(), null))
+                    .hasValueSatisfying(stock -> assertThat(stock.getQuantity()).isZero());
+        }
+
+        @Test
+        void lockedWarehouseQueryReturnsRowsInDrainOrder() {
+            // transferWarehouseStock drains (and locks) in exactly this order:
+            // the no-location bucket first, then locations by id ascending.
+            Item item = persistItem("SKU-812", "Hollow Block 4in");
+            Warehouse warehouse = persistWarehouse("WH-812", "Warehouse 812");
+            StorageLocation first = persistLocation(warehouse, "L-1");
+            StorageLocation second = persistLocation(warehouse, "L-2");
+            // Inserted out of drain order on purpose.
+            inventoryStockRepository.saveAndFlush(stock(item, warehouse, second, 3));
+            inventoryStockRepository.saveAndFlush(stock(item, warehouse, null, 1));
+            inventoryStockRepository.saveAndFlush(stock(item, warehouse, first, 2));
+            entityManager.clear();
+
+            assertThat(inventoryStockRepository.findAllByItemAndWarehouseForUpdate(item.getId(), warehouse.getId()))
+                    .extracting(InventoryStock::getQuantity)
+                    .containsExactly(1, 2, 3);
+        }
+
+        @Test
+        void shouldDoNothingWhenTheNoLocationRowAlreadyExists() {
+            Item item = persistItem("SKU-811", "Coco Lumber 2x2");
+            Warehouse warehouse = persistWarehouse("WH-811", "Warehouse 811");
+            inventoryStockRepository.saveAndFlush(stock(item, warehouse, null, 40));
+            entityManager.clear();
+
+            int inserted = inventoryStockRepository.insertIfAbsent(item.getId(), warehouse.getId(), null);
+
+            assertThat(inserted).isZero();
+            assertThat(inventoryStockRepository.findAllByItemAndWarehouseForUpdate(item.getId(), warehouse.getId()))
+                    .singleElement()
+                    .satisfies(stock -> assertThat(stock.getQuantity()).isEqualTo(40));
         }
     }
 

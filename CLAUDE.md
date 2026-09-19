@@ -200,9 +200,13 @@ Each repository test asserts Postgres reports the name its service matches on. D
 - **Find-or-create tables are a different problem** and aren't mapped to 409: the row is looked
   up and reused, not chosen by the caller, so a race should reuse the winning row rather than
   reject. The pattern for that is Postgres's `INSERT ... ON CONFLICT (...) DO NOTHING` followed by
-  a re-read (`UserRepository.insertIfAbsent`, used for `app_user`) — catching the violation
-  instead doesn't work, because Postgres aborts the transaction and the re-read would fail.
-  `inventory_stock` and `item_supplier` are still plain find-then-save and can 500 on a race.
+  a re-read (`UserRepository.insertIfAbsent` for `app_user`, `InventoryStockRepository.insertIfAbsent`
+  for `inventory_stock`) — catching the violation instead doesn't work, because Postgres aborts
+  the transaction and the re-read would fail. `item_supplier` is still plain find-then-save and
+  can 500 on a race.
+- **A nullable column in a unique constraint needs `NULLS NOT DISTINCT`** (Postgres 15+), or
+  rows with NULL there never conflict. V8's `inventory_stock (item, warehouse, location)`
+  constraint allowed unlimited duplicate no-location rows until V34.
 
 ## Permissions
 
@@ -306,6 +310,33 @@ Since `app`'s `UserSyncInterceptor` (see the `user` module README) now stores th
 `AuditorAwareImpl`'s per-request cache at the start of every authenticated `/api/**` request, the
 cache is warm for all normal API traffic. The explicit warm-up calls stay anyway: they're cheap
 cache hits there, and they still protect any code path that runs outside an `/api/**` request.
+
+## Stock quantities: lock the row before changing it
+
+`InventoryStock.quantity` is read, changed and written back, so without a lock two overlapping
+changes both read the same starting value and one silently overwrites the other. Reproduced on
+Postgres before the fix: 201 concurrent stock-ins of 1 ended at 57–97, concurrent withdrawals
+oversold, and concurrent first stock-ins created duplicate no-location rows that then broke every
+later adjustment for that item/warehouse. `StockConcurrencyIntegrationTest` (app) covers all of it
+and fails when the locks are removed. Rules for any code touching stock quantities:
+
+- **Change quantities only through `InventoryService`**, which locks every row it changes
+  (`SELECT ... FOR UPDATE` via `findForUpdate` / `findAllByItemAndWarehouseForUpdate`, creating
+  missing rows with `insertIfAbsent`) and then calls `applyChange`, the single mutation point.
+- **The locking read must be the row's first load in the transaction.** Hibernate doesn't refresh
+  an entity it already holds, so a row loaded earlier through an unlocked query would stay stale
+  even after being "locked". That's why `transferWarehouseStock` loads its origin rows with the
+  locking query rather than re-locking them one by one.
+- **Take multiple locks in one global order**: item id, then warehouse id, then location
+  (no-location bucket first, then by id). `transferStock` locks its two sides in that order rather
+  than "from, then to"; `transferWarehouseStock` locks the lower warehouse id first;
+  `TransferBatchService.submit` and `PurchaseReceiptService.confirmPurchaseReceipt` process lines
+  by item id. Opposite-direction transfers running at once then can't deadlock.
+- **Hibernate's `UPDATE` writes every column**, so even a non-quantity change to a stock row (e.g.
+  `updateReorderThreshold`) must lock too, or it can write back a stale quantity.
+- If Postgres still aborts a transaction on a lock conflict, inventory's `GlobalExceptionHandler`
+  returns a 409 ("nothing was saved, retry") instead of a 500; every stock operation is
+  all-or-nothing, so that's always safe.
 
 ## Optional-filter queries: always CAST nullable binds
 

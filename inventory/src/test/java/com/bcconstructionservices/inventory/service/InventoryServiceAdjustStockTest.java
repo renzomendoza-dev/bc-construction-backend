@@ -121,13 +121,22 @@ class InventoryServiceAdjustStockTest {
     }
 
     private void givenExistingStock(InventoryStock stock, Long locationId) {
-        when(inventoryStockRepository.findByItemAndWarehouseAndLocation(ITEM_ID, WAREHOUSE_ID, locationId))
+        when(inventoryStockRepository.findForUpdate(ITEM_ID, WAREHOUSE_ID, locationId))
                 .thenReturn(Optional.of(stock));
     }
 
     private void givenNoExistingStock(Long locationId) {
-        when(inventoryStockRepository.findByItemAndWarehouseAndLocation(ITEM_ID, WAREHOUSE_ID, locationId))
+        when(inventoryStockRepository.findForUpdate(ITEM_ID, WAREHOUSE_ID, locationId))
                 .thenReturn(Optional.empty());
+    }
+
+    /** No row yet: the service inserts one at zero, then re-reads (and locks) it. */
+    private InventoryStock givenStockCreatedOnDemand(StorageLocation stockLocation, Long locationId) {
+        InventoryStock created = existingStock(0, stockLocation);
+        when(inventoryStockRepository.findForUpdate(ITEM_ID, WAREHOUSE_ID, locationId))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(created));
+        return created;
     }
 
     private void givenSavesEchoTheirArgument() {
@@ -175,22 +184,30 @@ class InventoryServiceAdjustStockTest {
         @Test
         void shouldCreateNewStockRowStartingAtZeroWhenNoRowExists() {
             givenValidActiveReferences();
-            givenNoExistingStock(LOCATION_ID);
+            InventoryStock created = givenStockCreatedOnDemand(location, LOCATION_ID);
             givenSavesEchoTheirArgument();
 
             inventoryService.adjustStock(request(MovementType.IN, 50, LOCATION_ID));
 
+            // Created atomically at zero, then 0 + 50 = 50 applied to the locked row.
+            verify(inventoryStockRepository).insertIfAbsent(ITEM_ID, WAREHOUSE_ID, LOCATION_ID);
             ArgumentCaptor<InventoryStock> stockCaptor = ArgumentCaptor.forClass(InventoryStock.class);
             verify(inventoryStockRepository).save(stockCaptor.capture());
-            InventoryStock createdStock = stockCaptor.getValue();
-
-            // New row: no id yet, associations wired up, 0 + 50 = 50.
-            assertThat(createdStock.getId()).isNull();
-            assertThat(createdStock.getItem()).isEqualTo(activeItem);
-            assertThat(createdStock.getWarehouse()).isEqualTo(activeWarehouse);
-            assertThat(createdStock.getQuantity()).isEqualTo(50);
+            assertThat(stockCaptor.getValue()).isSameAs(created);
+            assertThat(stockCaptor.getValue().getQuantity()).isEqualTo(50);
 
             verify(stockMovementRepository).save(any(StockMovement.class));
+        }
+
+        @Test
+        void shouldNotCreateARowForAnOutMovement() {
+            givenValidActiveReferences();
+            givenNoExistingStock(LOCATION_ID);
+
+            org.assertj.core.api.Assertions.assertThatThrownBy(
+                    () -> inventoryService.adjustStock(request(MovementType.OUT, 10, LOCATION_ID)))
+                    .isInstanceOf(com.bcconstructionservices.inventory.exception.ResourceNotFoundException.class);
+            verify(inventoryStockRepository, never()).insertIfAbsent(any(), any(), any());
         }
 
         @Test

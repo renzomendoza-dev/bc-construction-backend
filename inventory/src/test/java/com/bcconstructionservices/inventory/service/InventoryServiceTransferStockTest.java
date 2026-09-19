@@ -146,18 +146,23 @@ class InventoryServiceTransferStockTest {
     }
 
     private void givenSourceStock(Long warehouseId, Long locationId, InventoryStock sourceStock) {
-        when(inventoryStockRepository.findByItemAndWarehouseAndLocation(ITEM_ID, warehouseId, locationId))
+        when(inventoryStockRepository.findForUpdate(ITEM_ID, warehouseId, locationId))
                 .thenReturn(Optional.of(sourceStock));
     }
 
     private void givenDestinationStock(Long warehouseId, Long locationId, InventoryStock destinationStock) {
-        when(inventoryStockRepository.findByItemAndWarehouseAndLocation(ITEM_ID, warehouseId, locationId))
+        when(inventoryStockRepository.findForUpdate(ITEM_ID, warehouseId, locationId))
                 .thenReturn(Optional.of(destinationStock));
     }
 
-    private void givenNoDestinationStock(Long warehouseId, Long locationId) {
-        when(inventoryStockRepository.findByItemAndWarehouseAndLocation(ITEM_ID, warehouseId, locationId))
-                .thenReturn(Optional.empty());
+    /** No destination row yet: the service inserts one at zero, then re-reads (and locks) it. */
+    private InventoryStock givenDestinationCreatedOnDemand(Long warehouseId, Long locationId,
+                                                           Warehouse warehouse, StorageLocation location) {
+        InventoryStock created = stock(502L, warehouse, location, 0);
+        when(inventoryStockRepository.findForUpdate(ITEM_ID, warehouseId, locationId))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(created));
+        return created;
     }
 
     private void givenSavesEchoTheirArgument() {
@@ -343,20 +348,20 @@ class InventoryServiceTransferStockTest {
             givenValidActiveReferences();
             givenSourceStock(FROM_WAREHOUSE_ID, FROM_LOCATION_ID,
                     stock(500L, fromWarehouse, fromLocation, 100));
-            givenNoDestinationStock(TO_WAREHOUSE_ID, TO_LOCATION_ID);
+            InventoryStock created = givenDestinationCreatedOnDemand(
+                    TO_WAREHOUSE_ID, TO_LOCATION_ID, toWarehouse, toLocation);
             givenSavesEchoTheirArgument();
 
             inventoryService.transferStock(defaultCrossWarehouseRequest(40));
 
+            // Created atomically at zero, then 0 + 40 = 40 applied to the locked row.
+            verify(inventoryStockRepository).insertIfAbsent(ITEM_ID, TO_WAREHOUSE_ID, TO_LOCATION_ID);
             List<InventoryStock> savedStocks = captureSavedStocks(2);
-            InventoryStock createdDestination = savedStocks.stream()
+            InventoryStock savedDestination = savedStocks.stream()
                     .filter(s -> s.getWarehouse().getId().equals(TO_WAREHOUSE_ID))
                     .findFirst().orElseThrow();
-
-            // Brand-new row: no id, correct associations, 0 + 40 = 40.
-            assertThat(createdDestination.getId()).isNull();
-            assertThat(createdDestination.getItem()).isEqualTo(activeItem);
-            assertThat(createdDestination.getQuantity()).isEqualTo(40);
+            assertThat(savedDestination).isSameAs(created);
+            assertThat(savedDestination.getQuantity()).isEqualTo(40);
         }
 
         @Test
@@ -399,6 +404,9 @@ class InventoryServiceTransferStockTest {
             givenValidActiveReferences();
             givenSourceStock(FROM_WAREHOUSE_ID, FROM_LOCATION_ID,
                     stock(500L, fromWarehouse, fromLocation, 10));
+            // Both rows are locked before the balance is checked.
+            givenDestinationStock(TO_WAREHOUSE_ID, TO_LOCATION_ID,
+                    stock(501L, toWarehouse, toLocation, 0));
 
             assertThatExceptionOfType(InsufficientStockException.class)
                     .isThrownBy(() -> inventoryService.transferStock(defaultCrossWarehouseRequest(25)))

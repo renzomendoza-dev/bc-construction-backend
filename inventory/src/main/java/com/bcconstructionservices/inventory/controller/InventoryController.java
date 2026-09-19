@@ -119,7 +119,8 @@ public class InventoryController {
                     + "(for OUT/ADJUSTMENT) no existing stock row to adjust",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
             @ApiResponse(responseCode = "409", description = "Insufficient stock: an OUT adjustment would drop "
-                    + "the balance below zero",
+                    + "the balance below zero. Rarely, instead: another request was changing the same stock at "
+                    + "the same moment - nothing was saved, retry.",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     @PreAuthorize("hasRole('STOCK_ADJUST')")
@@ -149,7 +150,8 @@ public class InventoryController {
             @ApiResponse(responseCode = "404", description = "Item, warehouse, or storage location not found",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
             @ApiResponse(responseCode = "409", description = "Insufficient stock at the source location to "
-                    + "cover the transfer",
+                    + "cover the transfer. Rarely, instead: another request was changing the same stock at the "
+                    + "same moment - nothing was saved, retry.",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     @PreAuthorize("hasRole('STOCK_TRANSFER')")
@@ -185,7 +187,9 @@ public class InventoryController {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Reorder threshold updated"),
             @ApiResponse(responseCode = "400", description = "Validation failure on the request body"),
-            @ApiResponse(responseCode = "404", description = "No matching inventory stock row exists")
+            @ApiResponse(responseCode = "404", description = "No matching inventory stock row exists"),
+            @ApiResponse(responseCode = "409", description = "Rare: another request was changing the same stock "
+                    + "at the same moment - nothing was saved, retry.")
     })
     @PatchMapping("/reorder-threshold")
     @PreAuthorize("hasRole('STOCK_SET_REORDER_THRESHOLD')")

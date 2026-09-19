@@ -20,6 +20,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -193,7 +194,10 @@ public class PurchaseReceiptService {
 
         auditorAware.getCurrentAuditor();
 
-        for (PurchaseReceiptLine line : receipt.getLines()) {
+        // Item-id order keeps stock-row locks in InventoryService's global lock
+        // order, so two confirmations sharing items can't deadlock.
+        for (PurchaseReceiptLine line : receipt.getLines().stream()
+                .sorted(Comparator.comparing(l -> l.getItem().getId())).toList()) {
             StockAdjustmentRequest adjustment = StockAdjustmentRequest.builder()
                     .itemId(line.getItem().getId())
                     .warehouseId(receipt.getWarehouse().getId())

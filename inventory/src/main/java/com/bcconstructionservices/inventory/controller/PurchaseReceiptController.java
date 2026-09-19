@@ -97,6 +97,9 @@ public class PurchaseReceiptController {
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
             @ApiResponse(responseCode = "404", description = "Purchase receipt not found",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "409", description = "Rare: another request was changing the same stock "
+                    + "at the same moment - nothing was saved and the receipt stays unconfirmed, retry.",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
             @ApiResponse(responseCode = "422", description = "The receipt has already been confirmed, or has no "
                     + "lines to confirm",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))

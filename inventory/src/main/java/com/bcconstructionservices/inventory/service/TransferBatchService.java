@@ -38,6 +38,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -181,7 +182,10 @@ public class TransferBatchService {
         batch.setStatus(TransferBatchStatus.SUBMITTED);
 
         try {
-            for (TransferLineItem line : lineItems) {
+            // Item-id order keeps stock-row locks in InventoryService's global
+            // lock order, so two batches sharing items can't deadlock.
+            for (TransferLineItem line : lineItems.stream()
+                    .sorted(Comparator.comparing(l -> l.getItem().getId())).toList()) {
                 // The only call in this codebase permitted to change InventoryStock.quantity
                 // for a batch line — see InventoryService.transferWarehouseStock's own
                 // javadoc for why the warehouse-total variant is the right one here.

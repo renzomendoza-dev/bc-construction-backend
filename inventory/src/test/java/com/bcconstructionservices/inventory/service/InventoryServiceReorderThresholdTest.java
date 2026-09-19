@@ -38,7 +38,7 @@ import static org.mockito.ArgumentMatchers.eq;
  * @InjectMocks injects those and leaves any other InventoryService
  * dependencies null, which is fine since this method never touches them.
  *
- * <p>The finder name (findByItemAndWarehouseAndLocation) and mapper method
+ * <p>The finder name (findForUpdate) and mapper method
  * (toStockLevelResponse) match the real repository/mapper sources in this
  * project - a null locationId is passed straight through to the finder, whose
  * JPQL matches it against a null stock location.
@@ -112,7 +112,7 @@ class InventoryServiceReorderThresholdTest {
     @Test
     void shouldUpdateAndSaveReorderThresholdLeavingQuantityUnchanged() {
         InventoryStock stock = existingStock(location, 120, 30);
-        when(inventoryStockRepository.findByItemAndWarehouseAndLocation(ITEM_ID, WAREHOUSE_ID, LOCATION_ID))
+        when(inventoryStockRepository.findForUpdate(ITEM_ID, WAREHOUSE_ID, LOCATION_ID))
                 .thenReturn(Optional.of(stock));
         when(inventoryStockRepository.save(any(InventoryStock.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
@@ -137,7 +137,7 @@ class InventoryServiceReorderThresholdTest {
 
     @Test
     void shouldThrowResourceNotFoundExceptionWhenNoMatchingStockRowExists() {
-        when(inventoryStockRepository.findByItemAndWarehouseAndLocation(ITEM_ID, WAREHOUSE_ID, LOCATION_ID))
+        when(inventoryStockRepository.findForUpdate(ITEM_ID, WAREHOUSE_ID, LOCATION_ID))
                 .thenReturn(Optional.empty());
 
         assertThatExceptionOfType(ResourceNotFoundException.class)
@@ -152,7 +152,7 @@ class InventoryServiceReorderThresholdTest {
     void shouldUpdateWarehouseLevelStockWhenLocationIdIsNull() {
         // Warehouse-level stock: null location on both the request and the row.
         InventoryStock warehouseLevelStock = existingStock(null, 80, 20);
-        when(inventoryStockRepository.findByItemAndWarehouseAndLocation(ITEM_ID, WAREHOUSE_ID, null))
+        when(inventoryStockRepository.findForUpdate(ITEM_ID, WAREHOUSE_ID, null))
                 .thenReturn(Optional.of(warehouseLevelStock));
         when(inventoryStockRepository.save(any(InventoryStock.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
@@ -165,7 +165,7 @@ class InventoryServiceReorderThresholdTest {
         assertThat(result).isSameAs(mapped);
 
         // Confirm the finder was called with a null locationId (not some default).
-        verify(inventoryStockRepository).findByItemAndWarehouseAndLocation(
+        verify(inventoryStockRepository).findForUpdate(
                 eq(ITEM_ID), eq(WAREHOUSE_ID), isNull());
 
         ArgumentCaptor<InventoryStock> captor = ArgumentCaptor.forClass(InventoryStock.class);
@@ -179,7 +179,7 @@ class InventoryServiceReorderThresholdTest {
     @Test
     void shouldNeverCreateAStockMovementRowForAThresholdUpdate() {
         InventoryStock stock = existingStock(location, 120, 30);
-        when(inventoryStockRepository.findByItemAndWarehouseAndLocation(ITEM_ID, WAREHOUSE_ID, LOCATION_ID))
+        when(inventoryStockRepository.findForUpdate(ITEM_ID, WAREHOUSE_ID, LOCATION_ID))
                 .thenReturn(Optional.of(stock));
         when(inventoryStockRepository.save(any(InventoryStock.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
