@@ -47,6 +47,15 @@ public class AuditorAwareImpl implements AuditorAware<Long> {
      */
     private static final ThreadLocal<Boolean> RESOLVING = ThreadLocal.withInitial(() -> false);
 
+    /**
+     * Request attribute caching the resolved local user id. UserSyncInterceptor
+     * fills it at the start of every /api/** request, so lookups here are
+     * normally cache hits.
+     */
+    static String cacheKey(UUID keycloakId) {
+        return "auditorId:" + keycloakId;
+    }
+
     @Override
     public Optional<Long> getCurrentAuditor() {
         if (RESOLVING.get()) {
@@ -62,7 +71,7 @@ public class AuditorAwareImpl implements AuditorAware<Long> {
 
         RequestAttributes attrs = RequestContextHolder.getRequestAttributes();
         if (attrs != null) {
-            Object cached = attrs.getAttribute("auditorId:" + keycloakId, RequestAttributes.SCOPE_REQUEST);
+            Object cached = attrs.getAttribute(cacheKey(keycloakId), RequestAttributes.SCOPE_REQUEST);
             if (cached != null) {
                 return Optional.of((Long) cached);
             }
@@ -74,7 +83,7 @@ public class AuditorAwareImpl implements AuditorAware<Long> {
 
             if (attrs != null) {
                 resolved.ifPresent(id ->
-                        attrs.setAttribute("auditorId:" + keycloakId, id, RequestAttributes.SCOPE_REQUEST));
+                        attrs.setAttribute(cacheKey(keycloakId), id, RequestAttributes.SCOPE_REQUEST));
             }
             return resolved;
         } finally {

@@ -6,6 +6,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
@@ -21,6 +22,7 @@ public class WebConfig implements WebMvcConfigurer {
     private String localPath;
 
     private final String[] allowedOrigins;
+    private final UserSyncInterceptor userSyncInterceptor;
 
     /**
      * @param allowedOrigins comma-separated origins from app.cors.allowed-origins;
@@ -30,8 +32,15 @@ public class WebConfig implements WebMvcConfigurer {
      */
     public WebConfig(
             @Value("${app.cors.allowed-origins:http://localhost:3000,http://localhost:5173}")
-            String[] allowedOrigins) {
+            String[] allowedOrigins,
+            UserSyncInterceptor userSyncInterceptor) {
         this.allowedOrigins = allowedOrigins;
+        this.userSyncInterceptor = userSyncInterceptor;
+    }
+
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {
+        registry.addInterceptor(userSyncInterceptor).addPathPatterns("/api/**");
     }
 
     @Bean

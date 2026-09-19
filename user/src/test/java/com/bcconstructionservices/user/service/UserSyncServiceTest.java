@@ -5,7 +5,6 @@ import com.bcconstructionservices.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -19,6 +18,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
+/**
+ * syncFromToken's contract. Writes to an existing, managed AppUser happen via
+ * Hibernate dirty checking at commit, so they're asserted on the returned
+ * entity rather than via save(). The real concurrent-insert behavior against
+ * Postgres is covered by app's UserSyncConcurrencyTest.
+ */
 @ExtendWith(MockitoExtension.class)
 class UserSyncServiceTest {
 
@@ -38,107 +43,89 @@ class UserSyncServiceTest {
         when(jwt.getSubject()).thenReturn(keycloakId.toString());
     }
 
-    @Test
-    void syncFromToken_existingUserWithNameClaim_updatesFullNameAndSaves() {
-        // Arrange
-        String updatedName = "Jane Doe Updated";
-        when(jwt.getClaimAsString("name")).thenReturn(updatedName);
-
-        AppUser existingUser = AppUser.builder()
+    private AppUser storedUser(String fullName) {
+        return AppUser.builder()
                 .id(1L)
                 .keycloakId(keycloakId)
-                .fullName("Jane Doe Old")
+                .fullName(fullName)
                 .active(true)
                 .createdAt(Instant.now().minusSeconds(3600))
                 .updatedAt(Instant.now().minusSeconds(3600))
                 .build();
-
-        when(userRepository.findByKeycloakId(keycloakId)).thenReturn(Optional.of(existingUser));
-        when(userRepository.save(any(AppUser.class))).thenAnswer(invocation -> invocation.getArgument(0));
-
-        // Act
-        AppUser result = userSyncService.syncFromToken(jwt);
-
-        // Assert
-        ArgumentCaptor<AppUser> captor = ArgumentCaptor.forClass(AppUser.class);
-        verify(userRepository, times(1)).save(captor.capture());
-
-        AppUser savedUser = captor.getValue();
-        assertThat(savedUser.getFullName()).isEqualTo(updatedName);
-        assertThat(savedUser.getKeycloakId()).isEqualTo(keycloakId);
-        assertThat(savedUser.getId()).isEqualTo(1L);
-        assertThat(savedUser.isActive()).isTrue();
-
-        assertThat(result).isNotNull();
-        assertThat(result.getFullName()).isEqualTo(updatedName);
-        assertThat(result.getId()).isEqualTo(1L);
     }
 
     @Test
-    void syncFromToken_noExistingUser_createsNewActiveUserAndSaves() {
-        // Arrange
-        String fullName = "New User";
-        when(jwt.getClaimAsString("name")).thenReturn(fullName);
+    void syncFromToken_existingUserWithChangedName_refreshesFullNameWithoutInserting() {
+        when(jwt.getClaimAsString("name")).thenReturn("Jane Doe Updated");
+        when(userRepository.findByKeycloakId(keycloakId)).thenReturn(Optional.of(storedUser("Jane Doe Old")));
 
-        when(userRepository.findByKeycloakId(keycloakId)).thenReturn(Optional.empty());
-        when(userRepository.save(any(AppUser.class))).thenAnswer(invocation -> invocation.getArgument(0));
-
-        // Act
         AppUser result = userSyncService.syncFromToken(jwt);
 
-        // Assert
-        ArgumentCaptor<AppUser> captor = ArgumentCaptor.forClass(AppUser.class);
-        verify(userRepository, times(1)).save(captor.capture());
+        assertThat(result.getId()).isEqualTo(1L);
+        assertThat(result.getFullName()).isEqualTo("Jane Doe Updated");
+        verify(userRepository, never()).insertIfAbsent(any(), any());
+    }
 
-        AppUser savedUser = captor.getValue();
-        assertThat(savedUser.getKeycloakId()).isEqualTo(keycloakId);
-        assertThat(savedUser.getFullName()).isEqualTo(fullName);
-        assertThat(savedUser.isActive()).isTrue();
+    @Test
+    void syncFromToken_existingUserWithSameName_changesNothing() {
+        AppUser existing = storedUser("Jane Doe");
+        Instant updatedAt = existing.getUpdatedAt();
+        when(jwt.getClaimAsString("name")).thenReturn("Jane Doe");
+        when(userRepository.findByKeycloakId(keycloakId)).thenReturn(Optional.of(existing));
 
-        assertThat(result).isNotNull();
-        assertThat(result.getKeycloakId()).isEqualTo(keycloakId);
-        assertThat(result.getFullName()).isEqualTo(fullName);
+        AppUser result = userSyncService.syncFromToken(jwt);
+
+        assertThat(result).isSameAs(existing);
+        assertThat(result.getUpdatedAt()).isEqualTo(updatedAt);
+        verify(userRepository).findByKeycloakId(keycloakId);
+        verifyNoMoreInteractions(userRepository);
+    }
+
+    @Test
+    void syncFromToken_noExistingUser_insertsAtomicallyAndReturnsTheStoredRow() {
+        when(jwt.getClaimAsString("name")).thenReturn("New User");
+        AppUser created = storedUser("New User");
+        when(userRepository.findByKeycloakId(keycloakId))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(created));
+        when(userRepository.insertIfAbsent(keycloakId, "New User")).thenReturn(1);
+
+        AppUser result = userSyncService.syncFromToken(jwt);
+
+        verify(userRepository).insertIfAbsent(keycloakId, "New User");
+        verify(userRepository, never()).save(any());
+        assertThat(result).isSameAs(created);
         assertThat(result.isActive()).isTrue();
     }
 
     @Test
     void syncFromToken_nameClaimMissing_fallsBackToPreferredUsername() {
-        // Arrange
-        String preferredUsername = "jdoe";
         when(jwt.getClaimAsString("name")).thenReturn(null);
-        when(jwt.getClaimAsString("preferred_username")).thenReturn(preferredUsername);
+        when(jwt.getClaimAsString("preferred_username")).thenReturn("jdoe");
+        when(userRepository.findByKeycloakId(keycloakId))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(storedUser("jdoe")));
+        when(userRepository.insertIfAbsent(keycloakId, "jdoe")).thenReturn(1);
 
-        when(userRepository.findByKeycloakId(keycloakId)).thenReturn(Optional.empty());
-        when(userRepository.save(any(AppUser.class))).thenAnswer(invocation -> invocation.getArgument(0));
-
-        // Act
         AppUser result = userSyncService.syncFromToken(jwt);
 
-        // Assert
-        ArgumentCaptor<AppUser> captor = ArgumentCaptor.forClass(AppUser.class);
-        verify(userRepository, times(1)).save(captor.capture());
-
-        AppUser savedUser = captor.getValue();
-        assertThat(savedUser.getFullName()).isEqualTo(preferredUsername);
-
-        assertThat(result).isNotNull();
-        assertThat(result.getFullName()).isEqualTo(preferredUsername);
+        verify(userRepository).insertIfAbsent(keycloakId, "jdoe");
+        assertThat(result.getFullName()).isEqualTo("jdoe");
     }
 
     @Test
-    void syncFromToken_savesExactlyOnce_perInvocation() {
-        // Arrange
-        when(jwt.getClaimAsString("name")).thenReturn("Some User");
+    void syncFromToken_losingAConcurrentFirstInsert_returnsTheWinnersRow() {
+        // Another request for the same new user inserted between our lookup
+        // and our insert, so ON CONFLICT made ours a no-op (0 rows).
+        when(jwt.getClaimAsString("name")).thenReturn("New User");
+        AppUser winners = storedUser("New User");
+        when(userRepository.findByKeycloakId(keycloakId))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(winners));
+        when(userRepository.insertIfAbsent(keycloakId, "New User")).thenReturn(0);
 
-        when(userRepository.findByKeycloakId(keycloakId)).thenReturn(Optional.empty());
-        when(userRepository.save(any(AppUser.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        AppUser result = userSyncService.syncFromToken(jwt);
 
-        // Act
-        userSyncService.syncFromToken(jwt);
-
-        // Assert
-        verify(userRepository, times(1)).save(any(AppUser.class));
-        verify(userRepository, never()).save(argThat(u -> false)); // sanity guard, no duplicate matcher saves
-        verifyNoMoreInteractions(userRepository);
+        assertThat(result).isSameAs(winners);
     }
 }

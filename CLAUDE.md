@@ -197,9 +197,12 @@ Each repository test asserts Postgres reports the name its service matches on. D
 - **Updates must flush inside the `try`.** An `UPDATE` only reaches the database on flush, so
   without one the violation surfaces at commit, outside the catch (see `saveCheckingSku`). Mind
   the reentrant auto-flush bug below before flushing an audited entity with a cascade collection.
-- **Find-or-create tables are a different problem** and aren't mapped to 409:
-  `inventory_stock`, `item_supplier` and `app_user.keycloak_id` are looked up and reused, not
-  chosen by the caller, so a race there should reuse the winning row rather than reject.
+- **Find-or-create tables are a different problem** and aren't mapped to 409: the row is looked
+  up and reused, not chosen by the caller, so a race should reuse the winning row rather than
+  reject. The pattern for that is Postgres's `INSERT ... ON CONFLICT (...) DO NOTHING` followed by
+  a re-read (`UserRepository.insertIfAbsent`, used for `app_user`) — catching the violation
+  instead doesn't work, because Postgres aborts the transaction and the re-read would fail.
+  `inventory_stock` and `item_supplier` are still plain find-then-save and can 500 on a race.
 
 ## Permissions
 
@@ -298,6 +301,11 @@ directly with no caching of its own, unlike `AuditorAwareImpl`.
 
 When adding a new method that updates one of these three (or any future) audited+cascade=ALL
 entity and then queries again afterward, apply the same one-line warm-up call.
+
+Since `app`'s `UserSyncInterceptor` (see the `user` module README) now stores the caller's id in
+`AuditorAwareImpl`'s per-request cache at the start of every authenticated `/api/**` request, the
+cache is warm for all normal API traffic. The explicit warm-up calls stay anyway: they're cheap
+cache hits there, and they still protect any code path that runs outside an `/api/**` request.
 
 ## Optional-filter queries: always CAST nullable binds
 

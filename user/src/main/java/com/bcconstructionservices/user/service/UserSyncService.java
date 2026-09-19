@@ -7,6 +7,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -20,11 +21,13 @@ import java.util.UUID;
  * {@code created_by}) to a local user without calling Keycloak's admin API
  * on every request.
  * <p>
- * {@link #syncFromToken(Jwt)} is intended to run on <strong>every</strong>
- * authenticated request — typically invoked from a security filter or
- * interceptor after the JWT has been validated — not just on first login.
- * This ensures the locally cached {@code fullName} stays fresh with
- * whatever the user's current Keycloak profile reports.
+ * {@link #syncFromToken(Jwt)} runs on <strong>every</strong> authenticated
+ * {@code /api/**} request, from the app module's {@code UserSyncInterceptor}
+ * (after the JWT has been validated, before the controller), and again from
+ * {@code GET /api/users/me}. So the local row always exists before any
+ * request's own code needs it (e.g. CurrentUserService, created_by
+ * auditing), and {@code fullName} stays fresh with the user's current
+ * Keycloak profile.
  */
 @Service
 @RequiredArgsConstructor
@@ -36,9 +39,12 @@ public class UserSyncService {
      * Syncs the local {@link AppUser} profile from the given validated JWT.
      * <p>
      * Extracts the Keycloak subject ("sub" claim) and display name ("name"
-     * claim, falling back to "preferred_username") from the token. If a
-     * local profile already exists for that subject, its {@code fullName}
-     * is refreshed. Otherwise, a new active local profile is created.
+     * claim, falling back to "preferred_username") from the token. If no
+     * local profile exists for that subject, one is created — atomically, so
+     * concurrent first requests from a new user can't collide (see
+     * {@link UserRepository#insertIfAbsent}). Its {@code fullName} is then
+     * refreshed if the token reports a different one; an unchanged profile
+     * is never written.
      *
      * @param jwt the validated Keycloak-issued JWT for the current request
      * @return the synced (existing or newly created) {@link AppUser}
@@ -48,19 +54,15 @@ public class UserSyncService {
         UUID keycloakId = UUID.fromString(jwt.getSubject());
         String fullName = resolveFullName(jwt);
 
-        return userRepository.findByKeycloakId(keycloakId)
-                .map(existingUser -> {
-                    existingUser.setFullName(fullName);
-                    return userRepository.save(existingUser);
-                })
-                .orElseGet(() -> {
-                    AppUser newUser = AppUser.builder()
-                            .keycloakId(keycloakId)
-                            .fullName(fullName)
-                            .active(true)
-                            .build();
-                    return userRepository.save(newUser);
-                });
+        AppUser user = userRepository.findByKeycloakId(keycloakId).orElse(null);
+        if (user == null) {
+            userRepository.insertIfAbsent(keycloakId, fullName);
+            user = userRepository.findByKeycloakId(keycloakId).orElseThrow();
+        }
+        if (!Objects.equals(user.getFullName(), fullName)) {
+            user.setFullName(fullName);
+        }
+        return user;
     }
 
     private String resolveFullName(Jwt jwt) {
