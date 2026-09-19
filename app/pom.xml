@@ -46,6 +46,11 @@
             <artifactId>workers</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <dependency>
+            <groupId>com.bcconstructionservices</groupId>
+            <artifactId>test-support</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>

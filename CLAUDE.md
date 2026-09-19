@@ -37,8 +37,8 @@ bean name is derived from the simple class name, not the package — two same-na
 classes in different modules (e.g. `inventory.exception.GlobalExceptionHandler` and a
 hypothetical `projects.exception.GlobalExceptionHandler`) throw
 `ConflictingBeanDefinitionException` the moment both are wired into the same `app` context,
-even though each module's own tests pass fine in isolation (no test boots the full multi-module
-`app` context, so this class of bug is invisible until a real app startup). This is exactly why
+even though each module's own tests pass fine in isolation (only `app`'s tests load every module
+together — see Testing). This is exactly why
 `inventory`'s handler is the plain `GlobalExceptionHandler` but every module added after it
 (`EquipmentExceptionHandler`, `ProjectsExceptionHandler`) uses a module-prefixed name instead —
 don't reuse the generic name for a new module's handler (or any other annotated class) without
@@ -340,6 +340,13 @@ same investigation, and now guard against the CAST bug for that endpoint.
   before it reaches real app startup — see that test's own javadoc and the naming-uniqueness
   rule above. No `@DataJpaTest`/`@WebMvcTest` slice test catches this, since none of them load
   every module together the way the real app does.
+- `app`'s `BackendApplicationContextTest` boots the **whole application** against embedded
+  Postgres under the `dev` profile: every module's beans, every schema migration, *and* the
+  `db/dev-data` seeds, then Hibernate `validate`. It's the only test that catches cross-module
+  startup failures — bean conflicts, migration ordering, and seeds that no longer fit the schema
+  (verified: reverting V22's seed to the retired `current_site` column fails it). Keycloak settings
+  are placeholders since nothing contacts Keycloak at startup. The `prod` profile isn't booted: it
+  excludes `db/dev-data`, and Flyway would reject the shared test database that already has them.
 
 ## Documentation expectations
 
