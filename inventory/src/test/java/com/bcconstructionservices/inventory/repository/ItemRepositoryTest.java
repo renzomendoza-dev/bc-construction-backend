@@ -26,10 +26,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * behavior of Item.images (ItemImageRepository) since that relationship is
  * owned by Item and can't meaningfully be tested in isolation.
  *
- * <p>Requires an embedded test database (e.g. the h2database "h2" artifact,
- * test scope) on the classpath — @DataJpaTest replaces the configured
- * DataSource with an embedded one by default via
- * {@code @AutoConfigureTestDatabase}, and needs a driver to do so.
+ * <p>Runs against the embedded Postgres supplied by the test-support module.
  *
  * <p>ASSUMPTIONS (repository method signatures / DTO-adjacent details not
  * given beyond "assume it has findBySku(String sku)"):

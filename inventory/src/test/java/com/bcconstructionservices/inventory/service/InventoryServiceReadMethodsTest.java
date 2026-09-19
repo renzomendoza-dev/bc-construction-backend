@@ -52,7 +52,7 @@ import static org.mockito.Mockito.when;
  * and mapping fidelity only (the service correctly maps whatever the
  * repository hands back). Genuine verification of the filtering rule
  * requires a @DataJpaTest against InventoryStockRepository with a real
- * (e.g. H2) database.
+ * database.
  *
  * <p>IMPORTANT - date range conversion: getMovementHistory accepts
  * LocalDate fromDate/toDate, but StockMovementRepository.search() takes

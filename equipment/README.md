@@ -101,7 +101,8 @@ matter more than consistency across modules, since equipment's own existing beha
 
 ## Testing
 
-Tests use an in-memory H2 database (test-scoped dependency in `pom.xml`). Because `equipment`
+Tests run against a throwaway embedded Postgres 16, supplied by the `test-support` module (no
+Docker needed). Because `equipment`
 now depends on `inventory`, `EquipmentTestApplication`'s Flyway configuration picks up
 inventory's migrations too (needed for the `warehouse` table these FKs reference) — repository
 slice tests that persist a `Warehouse` row do so directly against the real `Warehouse` entity
@@ -109,5 +110,5 @@ slice tests that persist a `Warehouse` row do so directly against the real `Ware
 `equipment`'s own entities never hold a JPA relationship to it). Run with:
 
 ```bash
-../mvnw -pl equipment test
+../mvnw -pl equipment -am test
 ```

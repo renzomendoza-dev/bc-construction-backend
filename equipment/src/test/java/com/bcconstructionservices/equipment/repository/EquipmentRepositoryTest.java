@@ -21,20 +21,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 /**
  * Repository slice test for {@link EquipmentRepository}.
  *
- * IMPORTANT:
- * - Uses @DataJpaTest (not @SpringBootTest) so Spring Boot supplies the
- *   TestEntityManager bean automatically.
- * - No hardcoded PostgreSQLDialect anywhere in this test's config — @DataJpaTest
- *   auto-substitutes the embedded H2 dialect.
- * - No DATABASE_TO_LOWER=TRUE on the H2 datasource. That flag previously caused
- *   CHECK constraint case-mismatch failures (H2 error 23514) on StockMovement's
- *   movement_type constraint; equipment.status carries the same risk if reintroduced.
- * - ASSUMPTION: the `status` CHECK constraint on the equipment table is written as
- *   plain `status IN ('AVAILABLE','IN_USE','MAINTENANCE','RETIRED', ...)`, not
- *   `= ANY (ARRAY[...])`. Verify this against the actual Flyway migration — if it
- *   uses ANY(ARRAY[...]) syntax, the invalid-status test below will behave
- *   differently (or not at all) on H2 vs PostgreSQL, and the migration should be
- *   rewritten to plain IN syntax for portability.
+ * Uses @DataJpaTest (not @SpringBootTest) so Spring Boot supplies the
+ * TestEntityManager bean automatically, against the embedded Postgres
+ * supplied by the test-support module.
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)

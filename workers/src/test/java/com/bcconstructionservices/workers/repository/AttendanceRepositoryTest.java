@@ -165,8 +165,6 @@ class AttendanceRepositoryTest {
          * AttendanceService.getCalendar fires a second query
          * (ProjectLookupHelper) per row while iterating calendarSummary's
          * results; this covers that interleaving against real query results.
-         * Note it passes on H2 either way and does not guard against the
-         * missing-CAST 500 that actually hit this endpoint on Postgres.
          */
         @Test
         void shouldSurviveFiringASecondQueryPerRowWhileIteratingResults() {

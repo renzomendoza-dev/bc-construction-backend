@@ -1,7 +1,5 @@
 spring:
-  datasource:
-    url: jdbc:h2:mem:workers_test;MODE=PostgreSQL
-    driver-class-name: org.h2.Driver
+  # datasource: supplied by test-support's embedded Postgres
   jpa:
     hibernate:
       ddl-auto: validate

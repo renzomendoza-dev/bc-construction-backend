@@ -56,12 +56,8 @@ public class Warehouse {
      */
     @NotNull
     @Enumerated(EnumType.STRING)
-    // Without this, Hibernate 7 + H2Dialect infer a native ENUM JDBC type for
-    // @Enumerated(STRING) fields (H2 supports native ENUM columns), which
-    // doesn't match this column's actual shape: plain VARCHAR + a hand-written
-    // CHECK constraint added via Flyway. That mismatch made H2 reject every
-    // insert with "Check constraint invalid" even for valid values. Forcing
-    // VARCHAR here binds it as a plain string, matching the real column.
+    // Pins the binding to the column's real shape (plain VARCHAR + a CHECK
+    // constraint), so no dialect can infer a native ENUM type for it instead.
     @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(name = "type", nullable = false)
     @Builder.Default

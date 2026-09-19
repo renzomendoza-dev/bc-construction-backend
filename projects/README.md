@@ -107,8 +107,9 @@ via `app/src/main/resources/db/dev-data/V28__seed_dev_projects_data.sql`, only l
 
 ## Testing
 
-Tests use an in-memory H2 database (test-scoped dependency in `pom.xml`). Run with:
+Tests run against a throwaway embedded Postgres 16, supplied by the `test-support` module (no
+Docker needed). Run with:
 
 ```bash
-../mvnw -pl projects test
+../mvnw -pl projects -am test
 ```

@@ -26,14 +26,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * (PurchaseReceiptLineRepository) since that relationship is owned by
  * PurchaseReceipt and can't meaningfully be tested in isolation.
  *
- * <p>Uses @SpringBootTest (not @DataJpaTest) against the real configured
- * Postgres DataSource. @DataJpaTest's embedded-database auto-configuration
- * (TestDatabaseAutoConfiguration) was forcing an H2 connection in this
- * environment even with @AutoConfigureTestDatabase(replace = NONE),
- * @TestPropertySource overrides, and excludeAutoConfiguration all attempted
- * — none changed the outcome, so @SpringBootTest is used instead to
- * sidestep that mechanism entirely and connect via the real Postgres
- * schema built by Flyway.
+ * <p>Runs against the embedded Postgres supplied by the test-support module.
  *
  * <p>@Transactional rolls back each test's changes automatically, giving
  * the same test-isolation behavior @DataJpaTest would have provided.

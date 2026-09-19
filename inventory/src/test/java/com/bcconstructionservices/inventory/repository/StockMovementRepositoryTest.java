@@ -6,7 +6,6 @@ import com.bcconstructionservices.inventory.entity.MovementType;
 import com.bcconstructionservices.inventory.entity.StockMovement;
 import com.bcconstructionservices.inventory.entity.Warehouse;
 import jakarta.persistence.EntityManager;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -21,24 +20,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Integration tests for StockMovementRepository.
  *
- * <p>Uses @SpringBootTest (not @DataJpaTest) against the real configured
- * Postgres DataSource — same pattern as the other repository tests in this
- * package. @DataJpaTest's embedded-database auto-configuration was forcing
- * an H2 connection in this environment regardless of
- * @AutoConfigureTestDatabase(replace = NONE), and the module's
- * Postgres-specific Flyway migrations don't run cleanly on H2 (e.g. the
- * chk_stock_movement_type check constraint), so real Postgres is required.
- *
- * <p>@Transactional rolls back each test's changes automatically.
- *
  * <p>Verifies the type check constraint accepts every MovementType enum
  * value — guarding against the enum and the chk_stock_movement_type
  * constraint in the Flyway migration drifting apart (e.g. a new enum value
  * added in Java but not in the migration).
  */
-//@SpringBootTest(classes = InventoryTestConfig.class)
-//@Transactional
-    @DataJpaTest
+@DataJpaTest
 class StockMovementRepositoryTest {
 
     @Autowired
@@ -92,8 +79,6 @@ class StockMovementRepositoryTest {
     // ---------------------------------------------------------------
 
     @Nested
-    @Disabled("H2 in PostgreSQL mode cannot evaluate chk_stock_movement_type; " +
-            "constraint verified working in Postgres. Re-enable under Testcontainers.")
     class MovementTypeCheckConstraint {
 
         @ParameterizedTest

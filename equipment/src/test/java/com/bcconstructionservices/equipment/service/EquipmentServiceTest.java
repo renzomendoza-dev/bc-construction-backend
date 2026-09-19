@@ -64,7 +64,7 @@ import static org.mockito.Mockito.when;
  *   repository query itself. The test below only verifies the service passes the
  *   correct status/cutoff through and returns whatever the repository gives back.
  *   Real coverage of the filtering behavior belongs in EquipmentRepositoryTest,
- *   exercised against H2 with real persisted rows.
+ *   exercised against a real database with real persisted rows.
  */
 @ExtendWith(MockitoExtension.class)
 class EquipmentServiceTest {

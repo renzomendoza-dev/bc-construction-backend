@@ -275,8 +275,9 @@ loaded when the `dev` Spring profile's `flyway.locations` override is active —
 
 ## Testing
 
-Tests use an in-memory H2 database (test-scoped dependency in `pom.xml`). Run with:
+Tests run against a throwaway embedded Postgres 16, supplied by the `test-support` module (no
+Docker needed). Run with:
 
 ```bash
-../mvnw -pl inventory test
+../mvnw -pl inventory -am test
 ```

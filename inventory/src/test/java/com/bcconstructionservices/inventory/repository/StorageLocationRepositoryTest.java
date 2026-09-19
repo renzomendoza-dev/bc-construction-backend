@@ -18,9 +18,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * @DataJpaTest slice tests for StorageLocationRepository.
  *
- * <p>Requires an embedded test database (e.g. H2, test scope) on the
- * classpath, since @DataJpaTest replaces the configured DataSource with an
- * embedded one by default.
+ * <p>Runs against the embedded Postgres supplied by the test-support module.
  *
  * <p>Covers: the (warehouse_id, code) uniqueness constraint,
  * existsByWarehouseIdAndCode(Long, String), and the single-arg

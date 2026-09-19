@@ -21,8 +21,8 @@ public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
 
     /**
      * Filters attendance records by optional worker, project, and date range.
-     * The CASTs are required on Postgres, and H2 won't catch their absence —
-     * see CLAUDE.md's "Optional-filter queries: always CAST nullable binds".
+     * The CASTs are required on Postgres — see CLAUDE.md's "Optional-filter
+     * queries: always CAST nullable binds".
      */
     @Query("""
             SELECT a FROM Attendance a

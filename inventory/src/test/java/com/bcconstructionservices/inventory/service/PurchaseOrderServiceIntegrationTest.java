@@ -38,7 +38,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
  * @DataJpaTest slice tests for PurchaseOrderService.submit/close against a
- * REAL H2-backed Hibernate session (not Mockito mocks) — the previous unit
+ * REAL Postgres-backed Hibernate session (not Mockito mocks) — the previous unit
  * tests in PurchaseOrderServiceTest mock every repository, so they can't
  * catch actual Hibernate session-consistency bugs. PurchaseOrderService and
  * its mapper are pulled in as real beans via @Import, since a plain

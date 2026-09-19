@@ -26,15 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Repository slice test for {@link EquipmentAssignmentRepository}.
  *
- * Follows the same H2/dialect rules established in EquipmentRepositoryTest:
- * - @AutoConfigureTestDatabase(replace = NONE) so this module's application.yaml
- *   datasource (jdbc:h2:mem:equipment_test;MODE=PostgreSQL) is honored instead of
- *   @DataJpaTest silently substituting its own embedded database (the root cause
- *   of the earlier "database has been closed" false failure).
- * - No DATABASE_TO_LOWER=TRUE, no hardcoded PostgreSQLDialect — dialect is
- *   auto-detected against the H2 datasource.
- * - Only status values present in V12's CHECK constraint are used below, to
- *   avoid re-triggering the CONSTRAINT_E63-style mismatch.
+ * Runs against the embedded Postgres supplied by the test-support module.
  *
  * ASSUMPTIONS — verify against the real classes and correct if they differ:
  * - EquipmentAssignment has a @ManyToOne Equipment `equipment` field (backing the

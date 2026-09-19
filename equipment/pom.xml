@@ -13,8 +13,8 @@
 
     <dependencies>
         <dependency>
-            <groupId>com.h2database</groupId>
-            <artifactId>h2</artifactId>
+            <groupId>com.bcconstructionservices</groupId>
+            <artifactId>test-support</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>

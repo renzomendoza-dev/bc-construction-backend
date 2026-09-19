@@ -37,7 +37,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * GET /api/attendance/calendar through real controller routing, Jackson
  * serialization, security filter chain, and WorkersExceptionHandler, with
  * AttendanceService NOT mocked (unlike AttendanceControllerTest's
- * @WebMvcTest slice). Runs on H2, so Postgres-only failures won't show here.
+ * @WebMvcTest slice). Fails if calendarSummary's CASTs are removed.
  */
 @SpringBootTest(classes = WorkersTestApplication.class, webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @AutoConfigureMockMvc

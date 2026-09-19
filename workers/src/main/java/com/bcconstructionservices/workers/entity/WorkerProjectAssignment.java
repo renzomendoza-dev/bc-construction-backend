@@ -32,9 +32,10 @@ import java.time.Instant;
  * At most one active assignment per worker at a time — enforced only at the
  * application layer ({@code WorkerProjectAssignmentService.assign}'s
  * {@code existsByWorkerIdAndActiveTrue} pre-check, 409 on violation), not by
- * a DB constraint: a partial unique index (the natural DB-level enforcement)
- * isn't portable to H2's PostgreSQL-compatibility mode, which every
- * module's test suite runs against — see V32's own comment. A worker moving
+ * a DB constraint. A partial unique index (the natural DB-level enforcement)
+ * was skipped in V32 only because the test suite then ran on H2, which
+ * rejects that syntax; tests now run on real Postgres, so a later migration
+ * could add it. A worker moving
  * crews means deactivating the old assignment first, then creating a new
  * one; {@code assign} rejects (409) rather than silently reassigning,
  * matching {@code EquipmentService.checkOut}'s precedent of rejecting an

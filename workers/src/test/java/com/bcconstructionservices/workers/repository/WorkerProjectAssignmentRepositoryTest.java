@@ -54,9 +54,8 @@ class WorkerProjectAssignmentRepositoryTest {
     }
 
     /**
-     * No DB-level partial unique index here (see V32's own comment on why —
-     * H2's PostgreSQL-compatibility mode, used by this test suite, rejects
-     * that syntax) — the DB happily allows two active rows for the same
+     * No DB-level partial unique index here (see WorkerProjectAssignment's
+     * javadoc) — the DB happily allows two active rows for the same
      * worker; only WorkerProjectAssignmentService's existsByWorkerIdAndActiveTrue
      * pre-check (covered by WorkerProjectAssignmentServiceTest) prevents it.
      */

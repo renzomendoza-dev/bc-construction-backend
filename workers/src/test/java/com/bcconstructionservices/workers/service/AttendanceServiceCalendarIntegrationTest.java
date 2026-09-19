@@ -28,8 +28,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * AttendanceService.getCalendar against a real Spring context, with the real
  * ProjectLookupHelper/ProjectExpenseService/ProjectRepository beans rather
- * than mocks. Runs on H2, so it can't catch Postgres-only failures such as
- * the missing-CAST 500 this endpoint once shipped.
+ * than mocks. Fails if calendarSummary's CASTs are removed (the live 500
+ * this endpoint once shipped).
  */
 @SpringBootTest(classes = WorkersTestApplication.class, webEnvironment = SpringBootTest.WebEnvironment.NONE)
 @Import({AttendanceServiceCalendarIntegrationTest.StubUserLookupHelperConfig.class, CrossModuleJpaRepositoriesTestConfig.class})

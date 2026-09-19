@@ -14,6 +14,7 @@ Spring Security 7 with a Keycloak OAuth2 resource server.
 | `projects` | Project running-expense tracking: `Project` (aggregation root, no site/warehouse link) and `ProjectExpense` (LABOR/MATERIAL/OTHER) | `user` |
 | `workers` | Field-labor roster (`Worker`, independent of `AppUser`/Keycloak) and daily `Attendance`, which auto-creates a LABOR `ProjectExpense` | `user`, `projects` |
 | `app` | Aggregator: the actual bootable Spring Boot application, wires every module together | all of the above |
+| `test-support` | Test-only: embedded Postgres for every module's test suite (see Testing). Only ever a `test`-scoped dependency | — |
 
 `projects` is deliberately kept independent of every other business module (`user` is its only
 dependency) as part of a broader push to keep modules loosely coupled and independently scalable
@@ -60,20 +61,13 @@ DEFAULT to a seeded table — see `V21__seed_dev_inventory_data.sql`'s header.)
 Cross-module DB foreign keys are fine (all modules share one physical database) even when the
 referencing Java entity can't hold a `@ManyToOne` to the referenced module's entity — see below.
 
-**Write migration SQL portable to H2's PostgreSQL-compatibility mode, not just real Postgres** —
-every module's test suite runs its migrations against H2 in `MODE=PostgreSQL` (see the Testing
-section), and `ddl-auto: validate` means the test schema must match the real one exactly, so
-there's no option to diverge. Two real syntax gaps have been hit so far:
-- A partial unique index (`CREATE UNIQUE INDEX ... WHERE active = true`) — real Postgres accepts
-  it, H2's PostgreSQL mode rejects it with a syntax error. No portable equivalent; the constraint
-  has to be enforced at the application layer only (see `WorkerProjectAssignment`'s own javadoc
-  for the resulting "no DB-level enforcement" trade-off).
-- Comma-separated multi-column `ALTER TABLE t ADD COLUMN a, ADD COLUMN b` — also rejected by H2's
-  PostgreSQL mode. Write one `ALTER TABLE ... ADD COLUMN` statement per column instead; Postgres
-  accepts that form too, so there's no downside to always writing it this way.
+**Never edit a migration that has already been applied** — not even a comment. Flyway checksums
+the whole file, and any change makes it refuse to start against an existing database. Changes go
+in a new, higher-numbered migration. (Folding later ALTERs back into their CREATE TABLE
+migrations was a one-off done while the dev DB was being recreated from scratch, not a pattern.)
 
-Run the module's tests (which apply every migration against a real H2 instance) after writing a
-new migration, before assuming it's portable — don't just eyeball the SQL for Postgres validity.
+Tests apply every migration to a real Postgres 16 (see Testing), so plain Postgres SQL is fine —
+there's no longer an H2 portability constraint. Run the module's tests after writing a migration.
 
 ## Cross-module entity references
 
@@ -288,13 +282,14 @@ fails with `PSQLException: could not determine data type of parameter $n` (a 500
 resolve anyway, and range comparisons on dates/timestamps reliably have not — but don't rely on
 the distinction; cast everything.
 
-**H2 never catches this.** Its PostgreSQL mode has no equivalent restriction, so every module's
-`@DataJpaTest` suite passes regardless. This has shipped as a live 500 twice, both times found
-only on the real dev server: `GET /api/inventory/movements` (`StockMovementRepository.search`,
-fixed 2026-07-28) and `GET /api/attendance/calendar` (`AttendanceRepository.calendarSummary`,
-fixed 2026-09-08 — after two wrong static-analysis diagnoses; see below). If a query works in
-tests but 500s on Postgres, suspect this first and ask for the real server stack trace before
-theorizing.
+This shipped as a live 500 twice while tests ran on H2, which has no such restriction, so both
+were found only on the real dev server: `GET /api/inventory/movements`
+(`StockMovementRepository.search`, fixed 2026-07-28) and `GET /api/attendance/calendar`
+(`AttendanceRepository.calendarSummary`, fixed 2026-09-08 — after two wrong static-analysis
+diagnoses; see below). Tests now run on real Postgres and **do** catch it — verified by removing
+`calendarSummary`'s CASTs, which fails three tests with the exact live-server error — but only
+when a test actually calls the query with a null filter, so keep casting regardless. If something
+works in tests but 500s on the server, ask for the real stack trace before theorizing.
 
 The calendar incident's first attempted fix changed `AttendanceCalendarRow` from a Spring Data
 interface projection to a JPQL constructor expression (`SELECT new ...`). That did **not** fix
@@ -302,8 +297,7 @@ the 500 and was never the cause — but it's kept, since a constructor expressio
 plain object with no proxy, and is the better default for a `GROUP BY`/aggregate projection
 anyway. `AttendanceServiceCalendarIntegrationTest` and `AttendanceCalendarHttpIntegrationTest`
 (real Spring context, real beans, via `CrossModuleJpaRepositoriesTestConfig`) came out of the
-same investigation; they pass on H2, so they don't guard against the CAST bug — only the rule
-above does.
+same investigation, and now guard against the CAST bug for that endpoint.
 
 ## Testing
 
@@ -311,9 +305,15 @@ above does.
   stubbing (not blanket `@BeforeEach` stubs) to avoid tripping strict-stubbing checks.
 - Mapper tests: instantiate the generated `*Impl` directly (no Spring context), wrap as a
   `Mockito.spy`, and inject `*LookupHelper` delegates via `ReflectionTestUtils.setField`.
-- Repository tests: `@DataJpaTest` + `@AutoConfigureTestDatabase(replace = NONE)` (module-local
-  H2 in Postgres mode, not the auto-substituted embedded DB) + a module-specific
-  `JpaAuditingTestConfig`. A module's `*TestApplication`'s `@EntityScan` needs every entity
+- **Test database: a real, throwaway Postgres 16**, started once per module's test JVM by the
+  `test-support` module (Zonky embedded-postgres — real Postgres binaries pulled through Maven,
+  no Docker or local install needed). Its `EmbeddedPostgresEnvironmentPostProcessor` is
+  registered via `META-INF/spring.factories`, so it applies to every Spring test context with no
+  per-test setup: it supplies the datasource and defaults `spring.test.database.replace=none`.
+  A module with DB tests just adds `test-support` as a `test`-scoped dependency. All contexts in
+  a module share the one instance, so tests must not leave data behind — `@DataJpaTest` rolls
+  back automatically; `@SpringBootTest` tests need `@Transactional`.
+- Repository tests: `@DataJpaTest` + a module-specific `JpaAuditingTestConfig`. A module's `*TestApplication`'s `@EntityScan` needs every entity
   package a repository test actually persists — including another module's entity, if a test
   persists it directly to satisfy a real FK (e.g. equipment's tests persisting `Warehouse` rows).
 - Controller tests: `@WebMvcTest`, service/mapper mocked via `@MockitoBean`, a local

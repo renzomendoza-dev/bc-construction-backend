@@ -23,9 +23,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * @DataJpaTest slice tests for InventoryStockRepository.
  *
- * <p>Requires an embedded test database (e.g. H2, test scope) on the
- * classpath, since @DataJpaTest replaces the configured DataSource with an
- * embedded one by default.
+ * <p>Runs against the embedded Postgres supplied by the test-support module.
  *
  * <p>ASSUMPTIONS:
  * <ul>
@@ -144,8 +142,8 @@ class InventoryStockRepositoryTest {
             // DESIGN NOTE (observed behavior, not a guess): standard SQL
             // semantics (NULL <> NULL) mean a composite UNIQUE constraint
             // does NOT treat two rows that are both NULL in location_id as
-            // conflicting - this holds for H2 (the typical @DataJpaTest
-            // default), PostgreSQL, and MySQL alike. So this save is
+            // conflicting - this holds for PostgreSQL (without NULLS NOT
+            // DISTINCT), H2, and MySQL alike. So this save is
             // expected to SUCCEED, meaning the DB constraint alone does
             // NOT prevent two "warehouse-level" (no specific location)
             // stock rows for the same item+warehouse from coexisting.

@@ -32,10 +32,9 @@ needing multiple records per day.
 
 At most one active `WorkerProjectAssignment` per worker at a time, enforced only at the
 application layer (`WorkerProjectAssignmentService.assign`'s `existsByWorkerIdAndActiveTrue`
-pre-check, 409 on violation) — a DB-level partial unique index (`WHERE active = true`) is what
-`uq_attendance_worker_date` does for `Attendance`, but H2's PostgreSQL-compatibility mode (used by
-this module's own test suite) rejects that syntax, and `ddl-auto: validate` requires the test
-schema to match the real one exactly. See `WorkerProjectAssignment`'s own javadoc.
+pre-check, 409 on violation). A DB-level partial unique index (`WHERE active = true`) was skipped
+only because tests then ran on H2, which rejects that syntax; they now run on real Postgres, so a
+later migration could add it. See `WorkerProjectAssignment`'s own javadoc.
 
 ## Cross-module design: a real service dependency, not just a lookup
 
@@ -108,7 +107,7 @@ All endpoints return `application/json` and validate request bodies with `@Valid
   rendering (unguarded). Reflects only what's actually been recorded; deliberately doesn't blend
   in `WorkerProjectAssignment`'s assigned-but-not-yet-recorded crew size (that's a separate,
   client-side concern if ever needed — see `AttendanceCalendarEntry`'s own javadoc).
-  This endpoint once shipped a live 500 on Postgres that this module's H2-backed tests couldn't
+  This endpoint once shipped a live 500 on Postgres that the module's tests, then on H2, couldn't
   reproduce: its optional filters needed an explicit `CAST` on each nullable bind — see the
   repo-root `CLAUDE.md`'s "Optional-filter queries: always CAST nullable binds".
 
@@ -167,7 +166,8 @@ the `dev` Spring profile's `flyway.locations` override is active — never in pr
 
 ## Testing
 
-Tests use an in-memory H2 database (test-scoped dependency in `pom.xml`). Run with:
+Tests run against a throwaway embedded Postgres 16, supplied by the `test-support` module (no
+Docker needed). Run with:
 
 ```bash
 ../mvnw -pl workers -am test
