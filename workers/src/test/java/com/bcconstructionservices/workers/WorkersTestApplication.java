@@ -14,16 +14,12 @@ import org.springframework.security.web.SecurityFilterChain;
 import static org.mockito.Mockito.mock;
 import static org.springframework.security.config.Customizer.withDefaults;
 
-// Scans com.bcconstructionservices.projects too (not just workers) — needed
-// so a real @SpringBootTest context can wire the actual ProjectLookupHelper/
-// ProjectService/ProjectExpenseService/ProjectRepository beans workers'
-// services call directly (see the repo-root CLAUDE.md's "Cross-module write
-// orchestration"), rather than every test either mocking them or bypassing
-// them via direct EntityManager persistence — the exact gap that let a real
-// GET /api/attendance/calendar 500 ship without any test catching it (see
-// AttendanceServiceCalendarIntegrationTest). Safe for @DataJpaTest slices:
-// those restrict to JPA-only beans regardless of scan breadth, so this
-// doesn't spin up projects' controllers/services there.
+// Scans com.bcconstructionservices.projects too (not just workers) so a real
+// @SpringBootTest context can wire the actual ProjectLookupHelper/
+// ProjectExpenseService beans workers' services call directly (see the
+// repo-root CLAUDE.md's "Cross-module write orchestration") instead of
+// mocking them. Slice tests (@DataJpaTest/@WebMvcTest) filter by bean type
+// regardless of scan breadth, so this doesn't spin up projects' beans there.
 @SpringBootApplication(scanBasePackages = {
         "com.bcconstructionservices.workers",
         "com.bcconstructionservices.projects"

@@ -108,11 +108,9 @@ All endpoints return `application/json` and validate request bodies with `@Valid
   rendering (unguarded). Reflects only what's actually been recorded; deliberately doesn't blend
   in `WorkerProjectAssignment`'s assigned-but-not-yet-recorded crew size (that's a separate,
   client-side concern if ever needed — see `AttendanceCalendarEntry`'s own javadoc).
-  `AttendanceRepository.calendarSummary`'s projection is a JPQL constructor expression
-  (`AttendanceCalendarRow`, a plain class), not a Spring Data interface projection — a real 500
-  shipped once with the interface version, not caught by this module's own `@DataJpaTest` (see
-  `AttendanceCalendarRow`'s own javadoc for the root-cause write-up and why that test didn't
-  catch it).
+  This endpoint once shipped a live 500 on Postgres that this module's H2-backed tests couldn't
+  reproduce: its optional filters needed an explicit `CAST` on each nullable bind — see the
+  repo-root `CLAUDE.md`'s "Optional-filter queries: always CAST nullable binds".
 
 ### Worker-project assignments — `/api/worker-assignments`
 - `POST /api/worker-assignments` — assign a worker to a project (`WORKER_ASSIGNMENT_CREATE`).

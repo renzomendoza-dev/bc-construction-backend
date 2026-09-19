@@ -272,33 +272,36 @@ directly with no caching of its own, unlike `AuditorAwareImpl`.
 When adding a new method that updates one of these three (or any future) audited+cascade=ALL
 entity and then queries again afterward, apply the same one-line warm-up call.
 
-## Interface projections + GROUP BY/aggregate + a second query per row
+## Optional-filter queries: always CAST nullable binds
 
-`GET /api/attendance/calendar` 500'd on the live dev server (not reproduced by `workers`' own
-`@DataJpaTest`) from `AttendanceRepository.calendarSummary`'s original shape: a Spring Data
-**interface** projection (`AttendanceCalendarRow` as an interface, matched by JPQL `SELECT ... AS
-alias`) over a query with `GROUP BY` + `COUNT(DISTINCT ...)`, whose results
-`AttendanceService.getCalendar` then iterates while firing a *second* query per row
-(`ProjectLookupHelper.resolveProjectName`). That combination — interface projection, aggregate/
-`GROUP BY`, and a further query interleaved while reading the projection's getters — is a known
-rough spot in some Hibernate versions. **The fix**: use a JPQL constructor expression instead
-(`SELECT new fully.qualified.Type(...)`, with the projection as a plain class rather than an
-interface) — it materializes a real object up front, with no proxy or lingering tie to the
-persistence context, sidestepping the whole class of issue regardless of the exact mechanism.
-Prefer this over an interface projection any time the query has `GROUP BY`/an aggregate *and*
-the caller does further per-row query work on the results.
+**Rule**: in any JPQL `(:param IS NULL OR ...)` optional filter, cast the `IS NULL` side —
+`(CAST(:dateFrom AS LocalDate) IS NULL OR a.attendanceDate >= :dateFrom)`. Every nullable
+bind, every type, no exceptions.
 
-**Why no test caught it — and what does**: three different tests each covered a different slice
-without covering the actual failing shape together: the repository test exercised the real
-projection but never fired a second query against it; the service test exercised the
-per-row-second-query logic but with Mockito-*mocked* projection rows, not genuine Hibernate
-projection results; the controller test mocked the service entirely. None of the three combined
-"real projection results" with "a second real query fired while iterating them." When a
-repository method's results get iterated with further queries per row (exactly the shape
-`AttendanceService.getCalendar` and `AttendanceRepositoryTest`'s
-`shouldSurviveFiringASecondQueryPerRowWhileIteratingResults` cover), add at least one test that
-does both together against a real `@DataJpaTest` context — a service-level test with mocked
-projection rows cannot catch this class of bug.
+Postgres's extended query protocol resolves each bind parameter's type at *parse* time, from the
+SQL text alone — never from the bound value. Hibernate emits each `:param` occurrence as its own
+`?`, so the `IS NULL` side is a bare `? IS NULL` with nothing to infer a type from, and Postgres
+fails with `PSQLException: could not determine data type of parameter $n` (a 500). An explicit
+`CAST` puts the type in the SQL text. Equality on `Long`/enum/boolean has so far happened to
+resolve anyway, and range comparisons on dates/timestamps reliably have not — but don't rely on
+the distinction; cast everything.
+
+**H2 never catches this.** Its PostgreSQL mode has no equivalent restriction, so every module's
+`@DataJpaTest` suite passes regardless. This has shipped as a live 500 twice, both times found
+only on the real dev server: `GET /api/inventory/movements` (`StockMovementRepository.search`,
+fixed 2026-07-28) and `GET /api/attendance/calendar` (`AttendanceRepository.calendarSummary`,
+fixed 2026-09-08 — after two wrong static-analysis diagnoses; see below). If a query works in
+tests but 500s on Postgres, suspect this first and ask for the real server stack trace before
+theorizing.
+
+The calendar incident's first attempted fix changed `AttendanceCalendarRow` from a Spring Data
+interface projection to a JPQL constructor expression (`SELECT new ...`). That did **not** fix
+the 500 and was never the cause — but it's kept, since a constructor expression materializes a
+plain object with no proxy, and is the better default for a `GROUP BY`/aggregate projection
+anyway. `AttendanceServiceCalendarIntegrationTest` and `AttendanceCalendarHttpIntegrationTest`
+(real Spring context, real beans, via `CrossModuleJpaRepositoriesTestConfig`) came out of the
+same investigation; they pass on H2, so they don't guard against the CAST bug — only the rule
+above does.
 
 ## Testing
 

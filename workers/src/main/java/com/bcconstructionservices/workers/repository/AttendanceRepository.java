@@ -21,18 +21,8 @@ public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
 
     /**
      * Filters attendance records by optional worker, project, and date range.
-     *
-     * The bare "(:param IS NULL OR ...)" idiom needs an explicit CAST on the
-     * IS NULL side on Postgres: the extended query protocol resolves each
-     * bind parameter's type at PARSE time, from surrounding syntax alone (not
-     * from the actual bound value) — a parameter used only in "$n IS NULL"
-     * gives Postgres nothing to infer a type from, and once the sibling
-     * comparison operator is overloaded across multiple types (as >=/<= are
-     * for date/timestamp/timestamptz), Postgres can't resolve it either and
-     * throws PSQLException: "could not determine data type of parameter $n"
-     * instead of guessing. H2 has no equivalent restriction, which is why
-     * this module's own @DataJpaTest suite never caught it — see
-     * calendarSummary below for the real 500 this caused on the live server.
+     * The CASTs are required on Postgres, and H2 won't catch their absence —
+     * see CLAUDE.md's "Optional-filter queries: always CAST nullable binds".
      */
     @Query("""
             SELECT a FROM Attendance a
@@ -51,20 +41,8 @@ public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
      * One row per (date, project) with any recorded attendance in range —
      * feeds GET /api/attendance/calendar. Reflects only what's actually been
      * recorded, deliberately not blended with WorkerProjectAssignment's
-     * assigned-crew size (see AttendanceCalendarEntry's own javadoc).
-     *
-     * Real 500 on the live dev server, reproduced from the actual server
-     * stack trace (not guessed): org.postgresql.util.PSQLException: "could
-     * not determine data type of parameter $3". Root cause is the bare
-     * "(:param IS NULL OR ...)" idiom — see search()'s javadoc above for the
-     * full mechanism; the explicit CAST below is the fix, giving Postgres a
-     * literal type from the SQL text instead of needing to infer one.
-     *
-     * (An earlier fix attempt in this same query — switching
-     * AttendanceCalendarRow from a Spring Data interface projection to a
-     * JPQL constructor expression — was a real, worthwhile change on its own
-     * merits, but targeted a different, unconfirmed hypothesis and did not
-     * fix this actual failure.)
+     * assigned-crew size (see AttendanceCalendarEntry's own javadoc). Shipped
+     * a live 500 on Postgres without the CASTs — see search() above.
      */
     @Query("""
             SELECT new com.bcconstructionservices.workers.repository.AttendanceCalendarRow(

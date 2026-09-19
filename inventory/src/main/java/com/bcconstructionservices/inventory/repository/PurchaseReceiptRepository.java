@@ -45,10 +45,10 @@ public interface PurchaseReceiptRepository extends JpaRepository<PurchaseReceipt
             SELECT pr FROM PurchaseReceipt pr
             JOIN FETCH pr.supplier
             JOIN FETCH pr.warehouse
-            WHERE (:supplierId IS NULL OR pr.supplier.id = :supplierId)
-              AND (:fromDate IS NULL OR pr.purchaseDate >= :fromDate)
-              AND (:toDate IS NULL OR pr.purchaseDate <= :toDate)
-              AND (:fulfillsTransferBatchId IS NULL OR pr.fulfillsTransferBatchId = :fulfillsTransferBatchId)
+            WHERE (CAST(:supplierId AS Long) IS NULL OR pr.supplier.id = :supplierId)
+              AND (CAST(:fromDate AS LocalDate) IS NULL OR pr.purchaseDate >= :fromDate)
+              AND (CAST(:toDate AS LocalDate) IS NULL OR pr.purchaseDate <= :toDate)
+              AND (CAST(:fulfillsTransferBatchId AS Long) IS NULL OR pr.fulfillsTransferBatchId = :fulfillsTransferBatchId)
             """)
     Page<PurchaseReceipt> search(@Param("supplierId") Long supplierId,
                                   @Param("fromDate") LocalDate fromDate,

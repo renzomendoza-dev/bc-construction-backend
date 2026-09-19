@@ -34,12 +34,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * The layer AttendanceServiceCalendarIntegrationTest doesn't reach: real
- * controller routing, real Jackson serialization of the response, the real
- * security filter chain, and the real WorkersExceptionHandler — all with
- * AttendanceService NOT mocked (unlike AttendanceControllerTest's @WebMvcTest
- * slice). If the service-level call is clean but this still 500s, the
- * failure is somewhere in this layer specifically.
+ * GET /api/attendance/calendar through real controller routing, Jackson
+ * serialization, security filter chain, and WorkersExceptionHandler, with
+ * AttendanceService NOT mocked (unlike AttendanceControllerTest's
+ * @WebMvcTest slice). Runs on H2, so Postgres-only failures won't show here.
  */
 @SpringBootTest(classes = WorkersTestApplication.class, webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @AutoConfigureMockMvc

@@ -162,16 +162,11 @@ class AttendanceRepositoryTest {
         }
 
         /**
-         * Regression test for a real 500 on the live dev server:
-         * AttendanceService.getCalendar fires a second query (ProjectLookupHelper)
-         * per row while iterating calendarSummary's results — a shape no
-         * other test happened to cover, since this class never touches
-         * ProjectLookupHelper and AttendanceServiceTest used Mockito-mocked
-         * rows rather than genuine Hibernate projection results (see
-         * AttendanceCalendarRow's own javadoc for the full write-up).
-         * Replicates that interleaving directly against the real query
-         * results using the EntityManager already available here, without
-         * needing WorkersTestApplication to also scan projects' beans.
+         * AttendanceService.getCalendar fires a second query
+         * (ProjectLookupHelper) per row while iterating calendarSummary's
+         * results; this covers that interleaving against real query results.
+         * Note it passes on H2 either way and does not guard against the
+         * missing-CAST 500 that actually hit this endpoint on Postgres.
          */
         @Test
         void shouldSurviveFiringASecondQueryPerRowWhileIteratingResults() {

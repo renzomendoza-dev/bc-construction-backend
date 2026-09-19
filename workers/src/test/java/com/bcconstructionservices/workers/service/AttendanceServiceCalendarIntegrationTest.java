@@ -26,16 +26,10 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Real end-to-end reproduction for the GET /api/attendance/calendar 500 —
- * unlike every other test touching AttendanceService.getCalendar,
- * this boots a genuine Spring context (WorkersTestApplication, now scanning
- * com.bcconstructionservices.projects too) wiring the REAL ProjectLookupHelper/
- * ProjectExpenseService/ProjectRepository beans, not Mockito mocks and not
- * an EntityManager-only workaround. Written specifically to answer "does
- * calling the real code, real beans, real H2-backed data reproduce this
- * outside the live HTTP request path" — if this fails, the stack trace here
- * is ground truth for what's actually broken, replacing static-analysis
- * guessing with an actual reproduction.
+ * AttendanceService.getCalendar against a real Spring context, with the real
+ * ProjectLookupHelper/ProjectExpenseService/ProjectRepository beans rather
+ * than mocks. Runs on H2, so it can't catch Postgres-only failures such as
+ * the missing-CAST 500 this endpoint once shipped.
  */
 @SpringBootTest(classes = WorkersTestApplication.class, webEnvironment = SpringBootTest.WebEnvironment.NONE)
 @Import({AttendanceServiceCalendarIntegrationTest.StubUserLookupHelperConfig.class, CrossModuleJpaRepositoriesTestConfig.class})
@@ -47,7 +41,7 @@ class AttendanceServiceCalendarIntegrationTest {
      * deliberately doesn't scan (it pulls in KeycloakAdminClient and other
      * beans needing Keycloak env config not present in this test context).
      * Every mapper here only calls it for createdByName/recordedByName —
-     * cosmetic display fields unrelated to what this test is reproducing —
+     * cosmetic display fields unrelated to what this test checks —
      * so a mock standing in for the bean is enough.
      */
     @TestConfiguration
@@ -86,8 +80,6 @@ class AttendanceServiceCalendarIntegrationTest {
                 .notes("Integration test entry")
                 .build());
 
-        // The exact call GET /api/attendance/calendar makes, with real beans
-        // all the way down — this is the actual reproduction attempt.
         List<AttendanceCalendarEntry> entries =
                 attendanceService.getCalendar(project.getId(), LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30));
 
