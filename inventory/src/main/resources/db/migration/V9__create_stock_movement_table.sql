@@ -7,6 +7,14 @@
 -- reference master/location data that must not be deleted out from under
 -- movement history -> ON DELETE RESTRICT on all four. created_by references
 -- the app_user who initiated the movement.
+--
+-- direction is the net effect of a movement row on its OWN warehouse's stock
+-- level (IN/OUT/WITHIN), set explicitly by InventoryService at construction
+-- time (not derived from movement_type/location columns alone -
+-- fromLocationId/toLocationId nullability can't reliably distinguish a
+-- cross-warehouse TRANSFER's origin row from its destination row once the
+-- origin side can debit the no-location bucket - see MovementDirection's own
+-- javadoc), so every insert must supply it; no default.
 
 CREATE TABLE stock_movement (
     id                BIGSERIAL                     PRIMARY KEY,
@@ -15,6 +23,7 @@ CREATE TABLE stock_movement (
     from_location_id  BIGINT,
     to_location_id    BIGINT,
     movement_type     VARCHAR(255)                   NOT NULL,
+    direction         VARCHAR(20)                    NOT NULL,
     quantity          INTEGER                        NOT NULL,
     reason            VARCHAR(255),
     created_at        TIMESTAMP(6) WITH TIME ZONE     NOT NULL,
@@ -30,7 +39,9 @@ CREATE TABLE stock_movement (
     CONSTRAINT fk_stock_movement_created_by
         FOREIGN KEY (created_by) REFERENCES app_user (id),
     CONSTRAINT chk_stock_movement_type
-        CHECK (movement_type IN ('IN', 'OUT', 'TRANSFER', 'ADJUSTMENT'))
+        CHECK (movement_type IN ('IN', 'OUT', 'TRANSFER', 'ADJUSTMENT')),
+    CONSTRAINT chk_stock_movement_direction
+        CHECK (direction IN ('IN', 'OUT', 'WITHIN'))
 );
 
 CREATE INDEX idx_stock_movement_item_id ON stock_movement (item_id);

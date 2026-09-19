@@ -24,7 +24,7 @@ CREATE TABLE transfer_batch (
     CONSTRAINT fk_transfer_batch_destination_warehouse
         FOREIGN KEY (destination_warehouse_id) REFERENCES warehouse (id) ON DELETE RESTRICT,
     CONSTRAINT chk_transfer_batch_status
-        CHECK (status IN ('DRAFT', 'SUBMITTED', 'COMPLETED')),
+        CHECK (status IN ('DRAFT', 'SUBMITTED', 'COMPLETED', 'AWAITING_PURCHASE')),
     CONSTRAINT chk_transfer_batch_origin_destination_distinct
         CHECK (origin_warehouse_id <> destination_warehouse_id)
 );

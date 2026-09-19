@@ -156,11 +156,11 @@ convention.
 ## Database migrations
 
 Flyway migration `V29__create_worker_and_attendance_tables.sql` (module-local — the full version
-sequence is shared and global across all modules) creates `worker` and `attendance`, including a
-real FK from `attendance.project_expense_id` to `projects`' `project_expense` table (legal since
-`workers` already depends on `projects`, and that migration runs after `project_expense` exists).
-`V32__add_worker_project_assignment_and_attendance_times.sql` adds `worker_project_assignment`
-and `attendance.time_in`/`time_out`.
+sequence is shared and global across all modules) creates `worker` and `attendance`, including
+`attendance.time_in`/`time_out` and a real FK from `attendance.project_expense_id` to `projects`'
+`project_expense` table (legal since `workers` already depends on `projects`, and that migration
+runs after `project_expense` exists). `V32__create_worker_project_assignment_table.sql` adds
+`worker_project_assignment`.
 
 Dev-only demo data (4 sample workers, one deactivated; a handful of `Attendance` rows against the
 existing `ACTIVE`/`ON_HOLD` seeded projects, with matching hand-inserted `ProjectExpense` rows)

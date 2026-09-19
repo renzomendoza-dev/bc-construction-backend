@@ -10,7 +10,7 @@ checked out, `MAIN` once returned), the same model material inventory already us
 
 | Entity | Purpose |
 |---|---|
-| `Equipment` | A physical asset — asset tag, name, category, serial number, `status`, current holder, and current warehouse. `currentWarehouseId` is always populated for equipment registered after V24 (see Rollout notes below). |
+| `Equipment` | A physical asset — asset tag, name, category, serial number, `status`, current holder, and current warehouse. `currentWarehouseId` is required at registration and kept in sync on every checkout/check-in. |
 | `EquipmentAssignment` | An immutable history record of one checkout/check-in cycle: who took it, which warehouse it went to, which warehouse it came back to, condition notes out/in. |
 | `EquipmentAssignmentBatch` / `EquipmentAssignmentBatchLine` | A batch move of one or more pieces of equipment: out to a `SITE` warehouse (assign-out), directly to a *different* `SITE` warehouse (transfer), or back to a `MAIN` warehouse (return) — the equipment-tracking analogue of inventory's `TransferBatch`. |
 
@@ -98,17 +98,6 @@ its own analogous "lifecycle already progressed" cases (e.g. `MaterialRequestNot
 `TransferBatchNotAwaitingPurchaseException`). Consistency **within** this module was judged to
 matter more than consistency across modules, since equipment's own existing behavior was already
 409 before the batch endpoint existed.
-
-## Rollout: existing equipment's location after V24
-
-`current_site` (free text) was replaced with `current_warehouse_id` (FK to `warehouse`) in V24.
-Existing free-text values can't be reliably mapped to a real `Warehouse` row, so this migration
-does **not** attempt fuzzy-matching or a forced reconciliation — `current_warehouse_id` starts
-NULL for every pre-existing row (both `AVAILABLE` equipment, which already had no tracked
-location, and `CHECKED_OUT`/`IN_USE` equipment, which loses its old site text). Each row
-self-heals to non-null the next time it goes through checkout or check-in, since both now
-require and set this field. Equipment registered after V24 always has it populated from
-creation.
 
 ## Testing
 

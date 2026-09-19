@@ -202,7 +202,7 @@ class TransferBatchRepositoryTest {
     }
 
     // ---------------------------------------------------------------
-    // CHECK constraint: status (V23 widened this to allow AWAITING_PURCHASE)
+    // CHECK constraint: status (V17's CHECK allows AWAITING_PURCHASE)
     // ---------------------------------------------------------------
 
     @Nested

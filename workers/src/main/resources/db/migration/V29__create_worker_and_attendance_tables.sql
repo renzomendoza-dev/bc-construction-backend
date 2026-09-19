@@ -30,6 +30,10 @@ CREATE TABLE attendance (
     days_present        NUMERIC(4, 2)                 NOT NULL,
     rate_snapshot       NUMERIC(12, 2)                NOT NULL,
     notes               VARCHAR(1000),
+    -- time_in/time_out are nullable - only ever set via the batch attendance
+    -- endpoint; a single POST /api/attendance record leaves them null.
+    time_in             TIME,
+    time_out            TIME,
     project_expense_id  BIGINT REFERENCES project_expense (id),
     recorded_by         BIGINT REFERENCES app_user (id),
     created_at          TIMESTAMP(6) WITH TIME ZONE   NOT NULL,

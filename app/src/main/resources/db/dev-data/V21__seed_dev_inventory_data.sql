@@ -110,10 +110,10 @@ INSERT INTO public.purchase_receipt_line (id, purchase_receipt_id, item_id, quan
 -- ------------------------------------------------------------
 -- stock_movement (IN movements matching the purchase receipts above)
 -- ------------------------------------------------------------
-INSERT INTO public.stock_movement (id, item_id, warehouse_id, from_location_id, to_location_id, movement_type, quantity, reason, created_at, created_by) VALUES
-(1, 1, 1, NULL, 1, 'IN', 500, 'Purchase receipt PR-2026-0001', now(), 1),
-(2, 4, 1, NULL, 2, 'IN', 20,  'Purchase receipt PR-2026-0002', now(), 1),
-(3, 5, 1, NULL, 2, 'IN', 60,  'Purchase receipt PR-2026-0002', now(), 1);
+INSERT INTO public.stock_movement (id, item_id, warehouse_id, from_location_id, to_location_id, movement_type, direction, quantity, reason, created_at, created_by) VALUES
+(1, 1, 1, NULL, 1, 'IN', 'IN', 500, 'Purchase receipt PR-2026-0001', now(), 1),
+(2, 4, 1, NULL, 2, 'IN', 'IN', 20,  'Purchase receipt PR-2026-0002', now(), 1),
+(3, 5, 1, NULL, 2, 'IN', 'IN', 60,  'Purchase receipt PR-2026-0002', now(), 1);
 
 -- ------------------------------------------------------------
 -- Reset sequences so future inserts continue from the right id

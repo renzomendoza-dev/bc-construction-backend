@@ -61,14 +61,14 @@ referencing Java entity can't hold a `@ManyToOne` to the referenced module's ent
 **Write migration SQL portable to H2's PostgreSQL-compatibility mode, not just real Postgres** —
 every module's test suite runs its migrations against H2 in `MODE=PostgreSQL` (see the Testing
 section), and `ddl-auto: validate` means the test schema must match the real one exactly, so
-there's no option to diverge. Two real syntax gaps hit while building `workers`' `V32`:
+there's no option to diverge. Two real syntax gaps have been hit so far:
 - A partial unique index (`CREATE UNIQUE INDEX ... WHERE active = true`) — real Postgres accepts
   it, H2's PostgreSQL mode rejects it with a syntax error. No portable equivalent; the constraint
   has to be enforced at the application layer only (see `WorkerProjectAssignment`'s own javadoc
   for the resulting "no DB-level enforcement" trade-off).
 - Comma-separated multi-column `ALTER TABLE t ADD COLUMN a, ADD COLUMN b` — also rejected by H2's
-  PostgreSQL mode. Split into one `ALTER TABLE ... ADD COLUMN` statement per column instead;
-  Postgres accepts that form too, so there's no downside to always writing it this way.
+  PostgreSQL mode. Write one `ALTER TABLE ... ADD COLUMN` statement per column instead; Postgres
+  accepts that form too, so there's no downside to always writing it this way.
 
 Run the module's tests (which apply every migration against a real H2 instance) after writing a
 new migration, before assuming it's portable — don't just eyeball the SQL for Postgres validity.

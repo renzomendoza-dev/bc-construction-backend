@@ -40,7 +40,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * ASSUMPTIONS — verify against the real classes and correct if they differ:
  * - EquipmentAssignment has a @ManyToOne Equipment `equipment` field (backing the
  *   equipment_id FK in V15), plus assignedToId (Long), warehouseId/returnWarehouseId
- *   (Long, FK to Warehouse — added by V24, replacing the original free-text site),
+ *   (Long, FK to Warehouse),
  *   checkedOutAt / checkedInAt (Instant), conditionOut / conditionIn
  *   (String), createdBy (Long), createdAt (DB-defaulted, not set here), and a
  *   Lombok @Builder like Equipment uses.

@@ -261,13 +261,15 @@ app:
 
 Flyway migrations live in `src/main/resources/db/migration`, `V2` through `V31` (module-local —
 the full version sequence is shared and global across all modules, so this module doesn't own
-every number), covering items, item images, suppliers, item-supplier links, warehouses, storage
-locations, inventory stock, stock movements, purchase receipts and lines, a `type` column added
-to `warehouse` (`MAIN`/`SITE`), the transfer batch / material request tables, (`V23`) the
-`AWAITING_PURCHASE` transfer batch status plus `purchase_receipt.fulfills_transfer_batch_id`,
-(`V25`) `purchase_order`/`purchase_order_line` plus `purchase_receipt.purchase_order_id`,
-(`V26`) `stock_movement.direction`, and (`V31`) `transfer_batch.project_id` plus
-`transfer_line_item.project_expense_id` (real FKs into the `projects` module's tables).
+every number), covering items, item images, suppliers, item-supplier links, warehouses (`type`
+`MAIN`/`SITE` included from `V6`), storage locations, inventory stock, stock movements
+(`direction` included from `V9`), purchase receipts and lines, the transfer batch / material
+request tables (transfer_batch's status CHECK already allows `AWAITING_PURCHASE` from `V17`),
+(`V23`) `purchase_receipt.fulfills_transfer_batch_id`, (`V25`) `purchase_order`/
+`purchase_order_line` plus `purchase_receipt.purchase_order_id`, and (`V31`)
+`transfer_batch.project_id` plus `transfer_line_item.project_expense_id` (real FKs into the
+`projects` module's tables — added as a later migration rather than folded into `V17`/`V18`
+since `project` doesn't exist until `V27`).
 Dev-only demo data seeds live separately under `app/src/main/resources/db/dev-data` and are only
 loaded when the `dev` Spring profile's `flyway.locations` override is active — never in prod.
 
