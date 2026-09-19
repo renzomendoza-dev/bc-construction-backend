@@ -105,7 +105,9 @@ All endpoints return `application/json` and validate request bodies with `@Valid
 
 There is deliberately no fulfill endpoint here — fulfillment happens by creating a transfer
 batch with `sourceMaterialRequestId` set and submitting it, which is what advances this
-request's status.
+request's status. A request can be filled across several batches: its status is recomputed from
+the total of every `COMPLETED` batch against it, so it becomes `FULFILLED` once those together
+cover every requested quantity, and an extra batch afterward never moves it back.
 
 ### Transfer batches — `/api/inventory/transfer-batches`
 - `POST /api/inventory/transfer-batches` — create a draft batch (optionally against a `MaterialRequest` via `sourceMaterialRequestId`)

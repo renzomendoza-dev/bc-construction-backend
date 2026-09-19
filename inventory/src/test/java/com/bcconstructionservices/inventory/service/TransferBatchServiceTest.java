@@ -475,6 +475,8 @@ class TransferBatchServiceTest {
             when(materialRequestRepository.findByIdWithSite(14L)).thenReturn(Optional.of(materialRequest));
             when(materialRequestLineItemRepository.findByMaterialRequestId(14L))
                     .thenReturn(List.of(requestLine));
+            when(transferLineItemRepository.findCompletedByMaterialRequestId(14L))
+                    .thenReturn(batch.getLineItems());
             givenSavesEchoTheirArgument();
             lenient().when(materialRequestRepository.save(any(MaterialRequest.class)))
                     .thenAnswer(invocation -> invocation.getArgument(0));
@@ -507,6 +509,8 @@ class TransferBatchServiceTest {
             when(materialRequestRepository.findByIdWithSite(14L)).thenReturn(Optional.of(materialRequest));
             when(materialRequestLineItemRepository.findByMaterialRequestId(14L))
                     .thenReturn(List.of(requestLine));
+            when(transferLineItemRepository.findCompletedByMaterialRequestId(14L))
+                    .thenReturn(batch.getLineItems());
             givenSavesEchoTheirArgument();
             lenient().when(materialRequestRepository.save(any(MaterialRequest.class)))
                     .thenAnswer(invocation -> invocation.getArgument(0));

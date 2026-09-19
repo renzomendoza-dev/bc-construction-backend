@@ -224,15 +224,16 @@ records over time (`MaterialRequest` by however many `TransferBatch`es reference
 `sourceMaterialRequestId`; `PurchaseOrder` by however many `PurchaseReceipt`s reference it via
 `purchaseOrderId`), landing on `PARTIALLY_*`/fully-fulfilled status as those children complete.
 
-**Known bug, don't copy it**: `TransferBatchService.updateLinkedMaterialRequestStatus` only
-compares the *current* batch's transferred quantities against what the request's lines still
-need — it does not sum across every batch previously submitted against that same request. Two
-separate partial-fulfillment batches over time can therefore compute the wrong status. This
-wasn't fixed in place (out of scope when found) but was **not** repeated:
-`PurchaseOrderService.updateStatusFromReceipts` sums *every* `CONFIRMED` `PurchaseReceipt`
-against the order, every time, via a repository query scoped to the parent id rather than the
-just-processed child's lines. Do this (query-scoped-to-parent, not lines-just-processed) for any
-new entity in this shape.
+**Always sum across every completed child, via a query scoped to the parent id** — never just the
+lines of the child being processed right now. Both instances do this:
+`PurchaseOrderService.updateStatusFromReceipts` (every `CONFIRMED` `PurchaseReceipt`, via
+`PurchaseReceiptLineRepository.findConfirmedByPurchaseOrderId`) and
+`TransferBatchService.updateLinkedMaterialRequestStatus` (every `COMPLETED` `TransferBatch`, via
+`TransferLineItemRepository.findCompletedByMaterialRequestId`). The latter originally used only
+the just-submitted batch's lines, which left a request filled across two batches stuck at
+`PARTIALLY_FULFILLED` and downgraded a `FULFILLED` request when a later top-up batch was
+submitted — see `TransferBatchServiceMaterialRequestStatusTest`. Count only children that have
+actually taken effect (confirmed/completed), not drafts.
 
 ## Reentrant auto-flush: audited entity + cascade=ALL collection + a later query in the same method
 

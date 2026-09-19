@@ -204,7 +204,7 @@ public class TransferBatchService {
         TransferBatch saved = transferBatchRepository.save(batch);
 
         if (saved.getSourceMaterialRequestId() != null) {
-            updateLinkedMaterialRequestStatus(saved, lineItems);
+            updateLinkedMaterialRequestStatus(saved);
         }
 
         return transferBatchMapper.toResponse(saved);
@@ -262,11 +262,14 @@ public class TransferBatchService {
 
     /**
      * Marks the MaterialRequest this batch fulfills as FULFILLED if every
-     * requested line's quantity was fully covered by this batch's transferred
-     * quantities, or PARTIALLY_FULFILLED otherwise. Silently no-ops if the
+     * requested line's quantity is covered by the sum of every COMPLETED batch
+     * against the request — this one included — or PARTIALLY_FULFILLED
+     * otherwise. Cumulative, so a request filled across several batches over
+     * time lands on the right status, and a later top-up batch can't
+     * downgrade an already-FULFILLED request. Silently no-ops if the
      * referenced request no longer exists.
      */
-    private void updateLinkedMaterialRequestStatus(TransferBatch batch, List<TransferLineItem> transferredLines) {
+    private void updateLinkedMaterialRequestStatus(TransferBatch batch) {
         MaterialRequest materialRequest = materialRequestRepository
                 .findByIdWithSite(batch.getSourceMaterialRequestId())
                 .orElse(null);
@@ -277,7 +280,8 @@ public class TransferBatchService {
         List<MaterialRequestLineItem> requestLines =
                 materialRequestLineItemRepository.findByMaterialRequestId(materialRequest.getId());
 
-        Map<Long, Integer> transferredByItemId = transferredLines.stream()
+        Map<Long, Integer> transferredByItemId = transferLineItemRepository
+                .findCompletedByMaterialRequestId(materialRequest.getId()).stream()
                 .collect(Collectors.toMap(
                         line -> line.getItem().getId(),
                         TransferLineItem::getQuantity,
