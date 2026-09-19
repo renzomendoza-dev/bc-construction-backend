@@ -22,6 +22,7 @@ import com.bcconstructionservices.workers.mapper.AttendanceMapper;
 import com.bcconstructionservices.workers.repository.AttendanceCalendarRow;
 import com.bcconstructionservices.workers.repository.AttendanceRepository;
 import com.bcconstructionservices.workers.repository.WorkerRepository;
+import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -30,8 +31,10 @@ import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.math.BigDecimal;
+import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
@@ -99,6 +102,13 @@ class AttendanceServiceTest {
         return attendance;
     }
 
+    /** What Spring throws when an insert violates the named DB constraint. */
+    private static DataIntegrityViolationException violationOf(String constraintName) {
+        return new DataIntegrityViolationException("constraint violated",
+                new ConstraintViolationException("constraint violated",
+                        new SQLException("duplicate key"), constraintName));
+    }
+
     @Nested
     class CreateAttendanceTests {
 
@@ -163,6 +173,32 @@ class AttendanceServiceTest {
                     .isThrownBy(() -> attendanceService.createAttendance(validRequest()));
             verify(projectExpenseService, never()).addExpense(any(), any());
             verify(attendanceRepository, never()).save(any());
+        }
+
+        @Test
+        void shouldMapAConcurrentInsertThatHitsTheWorkerDateConstraintToDuplicateAttendanceException() {
+            givenPreCheckPassesButSaveThrows(violationOf(AttendanceService.WORKER_DATE_CONSTRAINT));
+
+            assertThatExceptionOfType(DuplicateAttendanceException.class)
+                    .isThrownBy(() -> attendanceService.createAttendance(validRequest()));
+        }
+
+        @Test
+        void shouldRethrowAnUnrelatedIntegrityViolationUnchanged() {
+            givenPreCheckPassesButSaveThrows(violationOf("fk_some_other_constraint"));
+
+            assertThatExceptionOfType(DataIntegrityViolationException.class)
+                    .isThrownBy(() -> attendanceService.createAttendance(validRequest()));
+        }
+
+        private void givenPreCheckPassesButSaveThrows(DataIntegrityViolationException ex) {
+            when(workerRepository.findById(WORKER_ID)).thenReturn(Optional.of(activeWorker()));
+            when(attendanceRepository.existsByWorkerIdAndAttendanceDate(WORKER_ID, LocalDate.of(2026, 9, 5)))
+                    .thenReturn(false);
+            when(attendanceMapper.toEntity(any(AttendanceCreateRequest.class))).thenReturn(mappedAttendance());
+            when(projectExpenseService.addExpense(eq(PROJECT_ID), any(ProjectExpenseCreateRequest.class)))
+                    .thenReturn(ProjectExpenseResponse.builder().id(305L).build());
+            when(attendanceRepository.save(any(Attendance.class))).thenThrow(ex);
         }
 
         @Test
@@ -325,6 +361,21 @@ class AttendanceServiceTest {
             assertThat(response.getSkipped().get(0).getWorkerId()).isEqualTo(WORKER_ID);
             verifyNoInteractions(projectExpenseService);
             verify(workerRepository, never()).findById(any());
+        }
+
+        @Test
+        void shouldFailTheWholeBatchWith409WhenAConcurrentInsertHitsTheWorkerDateConstraint() {
+            when(workerRepository.findById(WORKER_ID)).thenReturn(Optional.of(activeWorker()));
+            when(attendanceRepository.existsByWorkerIdAndAttendanceDate(WORKER_ID, LocalDate.of(2026, 9, 7)))
+                    .thenReturn(false);
+            when(projectExpenseService.addExpense(eq(PROJECT_ID), any(ProjectExpenseCreateRequest.class)))
+                    .thenReturn(ProjectExpenseResponse.builder().id(305L).build());
+            when(attendanceRepository.save(any(Attendance.class)))
+                    .thenThrow(violationOf(AttendanceService.WORKER_DATE_CONSTRAINT));
+
+            assertThatExceptionOfType(DuplicateAttendanceException.class)
+                    .isThrownBy(() -> attendanceService.createBatch(
+                            batchRequest(line(WORKER_ID, LocalTime.of(7, 0), LocalTime.of(16, 0)))));
         }
 
         @Test

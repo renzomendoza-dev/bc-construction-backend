@@ -12,7 +12,6 @@ import com.bcconstructionservices.workers.mapper.WorkerProjectAssignmentMapper;
 import com.bcconstructionservices.workers.repository.WorkerProjectAssignmentRepository;
 import com.bcconstructionservices.workers.repository.WorkerRepository;
 import lombok.RequiredArgsConstructor;
-import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -67,21 +66,12 @@ public class WorkerProjectAssignmentService {
         try {
             saved = workerProjectAssignmentRepository.save(assignment);
         } catch (DataIntegrityViolationException ex) {
-            if (violates(ex, ACTIVE_ASSIGNMENT_INDEX)) {
+            if (ConstraintViolations.violates(ex, ACTIVE_ASSIGNMENT_INDEX)) {
                 throw new DuplicateActiveAssignmentException(worker.getId());
             }
             throw ex;
         }
         return workerProjectAssignmentMapper.toResponse(saved);
-    }
-
-    private static boolean violates(DataIntegrityViolationException ex, String constraintName) {
-        for (Throwable cause = ex; cause != null; cause = cause.getCause()) {
-            if (cause instanceof ConstraintViolationException violation) {
-                return constraintName.equalsIgnoreCase(violation.getConstraintName());
-            }
-        }
-        return false;
     }
 
     /**

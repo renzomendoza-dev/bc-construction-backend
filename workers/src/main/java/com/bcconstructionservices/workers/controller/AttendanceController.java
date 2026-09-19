@@ -85,7 +85,10 @@ public class AttendanceController {
                     + "calendar. Any other failure (inactive worker, worker/project not found, timeOut not after "
                     + "timeIn, a duplicate workerId within the same request, or the project being "
                     + "COMPLETED/CANCELLED) aborts the whole batch — same all-or-nothing transaction as "
-                    + "POST /api/inventory/transfer-batches/{id}/submit."
+                    + "POST /api/inventory/transfer-batches/{id}/submit. One exception to skipping: if another "
+                    + "request records one of these workers for this date while this batch is being processed, "
+                    + "the whole batch fails with 409 and nothing is saved; retrying then reports that worker "
+                    + "as skipped."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "Batch processed — see the response for which "
@@ -95,6 +98,9 @@ public class AttendanceController {
                     + "isn't after its timeIn, a workerId appears more than once, or a worker is inactive",
                     content = @Content(schema = @Schema(implementation = ValidationErrorResponse.class))),
             @ApiResponse(responseCode = "404", description = "A worker or the project was not found",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "409", description = "A concurrent request recorded one of these workers "
+                    + "for this date mid-batch; nothing was saved — retry",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
             @ApiResponse(responseCode = "422", description = "The project is COMPLETED/CANCELLED",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))

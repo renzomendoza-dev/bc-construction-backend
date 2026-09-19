@@ -171,6 +171,16 @@ choice is genuinely ambiguous, say so explicitly and pick one rather than guessi
 OpenAPI spec is how the frontend verifies backend behavior, and an undocumented edge case here
 has cost real frontend debugging time before.
 
+**Uniqueness rules: pre-check *and* DB constraint, both returning the same 4xx.** A service-level
+`exists...` pre-check gives the clean 409 in the normal case, but two concurrent requests can both
+pass it; the DB unique constraint/index then rejects the second insert. Catch
+`DataIntegrityViolationException` around that insert and map it to the same exception as the
+pre-check — matched by constraint name via `ConstraintViolations.violates` (workers), so unrelated
+integrity errors still surface unchanged. Otherwise the race is an undifferentiated 500. See
+`AttendanceService.insert` (`uq_attendance_worker_date`) and `WorkerProjectAssignmentService.assign`
+(`uq_worker_project_assignment_active_worker`); their repository tests assert Postgres reports the
+constraint name the service matches on.
+
 ## Permissions
 
 One `@PreAuthorize("hasRole('X')")` string per mutating action, named `<MODULE>_<ACTION>`

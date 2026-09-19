@@ -5,6 +5,7 @@ import com.bcconstructionservices.workers.JpaAuditingTestConfig;
 import com.bcconstructionservices.workers.entity.Attendance;
 import com.bcconstructionservices.workers.entity.Worker;
 import jakarta.persistence.EntityManager;
+import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -68,7 +69,18 @@ class AttendanceRepositoryTest {
             attendanceRepository.saveAndFlush(buildAttendance(LocalDate.of(2026, 9, 5)));
 
             assertThatExceptionOfType(DataIntegrityViolationException.class)
-                    .isThrownBy(() -> attendanceRepository.saveAndFlush(buildAttendance(LocalDate.of(2026, 9, 5))));
+                    .isThrownBy(() -> attendanceRepository.saveAndFlush(buildAttendance(LocalDate.of(2026, 9, 5))))
+                    // AttendanceService maps a violation to 409 by this name.
+                    .satisfies(ex -> assertThat(constraintNameOf(ex)).isEqualTo("uq_attendance_worker_date"));
+        }
+
+        private String constraintNameOf(Throwable ex) {
+            for (Throwable cause = ex; cause != null; cause = cause.getCause()) {
+                if (cause instanceof ConstraintViolationException violation) {
+                    return violation.getConstraintName();
+                }
+            }
+            return null;
         }
     }
 

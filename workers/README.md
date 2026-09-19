@@ -101,6 +101,10 @@ All endpoints return `application/json` and validate request bodies with `@Valid
   the calendar. Any other failure (inactive worker, worker/project not found, `timeOut` not after
   `timeIn`, a `workerId` repeated within the same request, or the project locked) aborts the
   *whole* batch — same all-or-nothing transaction as `POST /api/inventory/transfer-batches/{id}/submit`.
+  One exception to skipping: if a concurrent request records one of these workers for that date
+  mid-batch, the database's `uq_attendance_worker_date` constraint rejects the insert and the whole
+  batch fails with 409 (nothing saved); retrying reports that worker as skipped. The single-record
+  endpoint returns the same 409 for that race.
 - `GET /api/attendance/calendar?projectId=&dateFrom=&dateTo=` — one entry per `(date, project)`
   with any recorded attendance in range, plus a distinct-worker count — shaped for calendar
   rendering (unguarded). Reflects only what's actually been recorded; deliberately doesn't blend

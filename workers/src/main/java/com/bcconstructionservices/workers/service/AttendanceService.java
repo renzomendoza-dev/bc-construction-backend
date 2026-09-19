@@ -24,6 +24,7 @@ import com.bcconstructionservices.workers.repository.AttendanceCalendarRow;
 import com.bcconstructionservices.workers.repository.AttendanceRepository;
 import com.bcconstructionservices.workers.repository.WorkerRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -60,6 +61,7 @@ import java.util.Set;
 public class AttendanceService {
 
     private static final BigDecimal STANDARD_HOURS_PER_DAY = new BigDecimal("8");
+    static final String WORKER_DATE_CONSTRAINT = "uq_attendance_worker_date";
 
     private final AttendanceRepository attendanceRepository;
     private final WorkerRepository workerRepository;
@@ -93,8 +95,26 @@ public class AttendanceService {
         );
         attendance.setProjectExpenseId(expense.getId());
 
-        Attendance saved = attendanceRepository.save(attendance);
+        Attendance saved = insert(attendance);
         return attendanceMapper.toResponse(saved);
+    }
+
+    /**
+     * The existsByWorkerIdAndAttendanceDate pre-checks cover the normal case;
+     * two concurrent requests for the same worker/date can both pass them, and
+     * then uq_attendance_worker_date rejects the second insert. That violation
+     * maps to the same 409 the pre-check returns, instead of a 500.
+     */
+    private Attendance insert(Attendance attendance) {
+        try {
+            return attendanceRepository.save(attendance);
+        } catch (DataIntegrityViolationException ex) {
+            if (ConstraintViolations.violates(ex, WORKER_DATE_CONSTRAINT)) {
+                throw new DuplicateAttendanceException(
+                        attendance.getWorker().getId(), attendance.getAttendanceDate());
+            }
+            throw ex;
+        }
     }
 
     /**
@@ -144,6 +164,12 @@ public class AttendanceService {
      * worker, worker/project not found, invalid time range, locked project)
      * aborts the whole batch — same all-or-nothing transaction as
      * TransferBatchService.submit.
+     *
+     * <p>One exception to the skip rule: if a concurrent request records the
+     * same worker/date between this batch's pre-check and its insert, the
+     * whole batch fails with 409 (DuplicateAttendanceException), since Postgres
+     * aborts the transaction on the constraint violation and it can't continue.
+     * Retrying then reports that worker as skipped.
      */
     @Transactional
     public AttendanceBatchResponse createBatch(AttendanceBatchCreateRequest request) {
@@ -193,7 +219,7 @@ public class AttendanceService {
                     request.getProjectId(), buildExpenseRequest(worker, attendance));
             attendance.setProjectExpenseId(expense.getId());
 
-            Attendance saved = attendanceRepository.save(attendance);
+            Attendance saved = insert(attendance);
             created.add(attendanceMapper.toResponse(saved));
         }
 
