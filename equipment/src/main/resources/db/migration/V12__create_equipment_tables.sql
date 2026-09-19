@@ -20,7 +20,7 @@ CREATE TABLE equipment (
     serial_number         VARCHAR(100),
     status                VARCHAR(20) NOT NULL DEFAULT 'AVAILABLE'
         CONSTRAINT equipment_status_check
-            CHECK (status IN ('AVAILABLE','CHECKED_OUT','IN_USE','IN_REPAIR','RETIRED','LOST')),
+            CHECK (status IN ('AVAILABLE','CHECKED_OUT','IN_USE','IN_REPAIR','RETIRED','LOST','MAINTENANCE')),
     current_holder_id     BIGINT REFERENCES app_user(id),
     current_warehouse_id  BIGINT REFERENCES warehouse(id),
     checked_out_at        TIMESTAMP(6) WITH TIME ZONE,

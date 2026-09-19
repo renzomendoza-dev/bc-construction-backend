@@ -116,13 +116,26 @@ class EquipmentRepositoryTest {
         Equipment duplicate = Equipment.builder()
                 .assetTag("EQ-001") // same asset tag as available1
                 .name("Different Name")
-                .status(EquipmentStatus.MAINTENANCE)
+                .status(EquipmentStatus.AVAILABLE)
                 .build();
 
         assertThrows(DataIntegrityViolationException.class, () -> {
             equipmentRepository.save(duplicate);
             entityManager.flush(); // force the unique constraint check now
         });
+    }
+
+    @Test
+    void save_maintenanceStatus_persistsSuccessfully() {
+        Equipment underMaintenance = Equipment.builder()
+                .assetTag("EQ-004")
+                .name("Generator")
+                .status(EquipmentStatus.MAINTENANCE)
+                .build();
+
+        Equipment saved = entityManager.persistFlushFind(underMaintenance);
+
+        assertThat(saved.getStatus()).isEqualTo(EquipmentStatus.MAINTENANCE);
     }
 
     @Test
