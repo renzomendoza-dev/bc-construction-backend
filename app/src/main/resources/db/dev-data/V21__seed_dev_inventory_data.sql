@@ -2,14 +2,18 @@
 -- BC Construction Services — Sample Data (dev profile only)
 -- Prices in Philippine Peso (PHP)
 --
--- Numbered to run AFTER every real schema migration (currently up through
--- V20 in db/migration) rather than adjacent to them - dev-data must always
--- apply against the FINAL schema shape, not whatever shape existed when
--- this seed file was first written. If a new real schema migration is ever
--- added above V20, bump this file's version number (and V22's) so dev-data
--- keeps running last. (History: this file used to be V14, which broke when
--- V16 later added warehouse.type - V14 ran before V16 and referenced a
--- column that didn't exist yet.)
+-- Dev-data seeds are interleaved with the real schema migrations in the
+-- global Flyway sequence (V21, V22, V28, V30), so each one runs against the
+-- schema as of its own version, NOT the final schema. Two rules follow:
+--
+-- 1. A seed may only reference columns that exist at its version. Adding a
+--    column to a seeded table in a LATER migration is fine only if that
+--    column is nullable or has a DEFAULT - a NOT NULL column with no
+--    default breaks every seed row inserted before it.
+-- 2. Never renumber or edit an already-applied seed to "move it later" -
+--    Flyway rejects a changed checksum or a missing applied version on any
+--    existing dev database. If the schema outgrows a seed, fold the change
+--    into the seed only when the dev DB is being recreated anyway.
 -- ============================================================
 
 -- ------------------------------------------------------------

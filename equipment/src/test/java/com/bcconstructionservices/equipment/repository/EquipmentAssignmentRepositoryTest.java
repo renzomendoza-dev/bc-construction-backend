@@ -33,13 +33,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   of the earlier "database has been closed" false failure).
  * - No DATABASE_TO_LOWER=TRUE, no hardcoded PostgreSQLDialect — dialect is
  *   auto-detected against the H2 datasource.
- * - Only status values actually present in V15's CHECK constraint
- *   ('AVAILABLE','CHECKED_OUT','IN_USE','IN_REPAIR','RETIRED','LOST') are used
- *   below, to avoid re-triggering the CONSTRAINT_E63-style mismatch.
+ * - Only status values present in V12's CHECK constraint are used below, to
+ *   avoid re-triggering the CONSTRAINT_E63-style mismatch.
  *
  * ASSUMPTIONS — verify against the real classes and correct if they differ:
  * - EquipmentAssignment has a @ManyToOne Equipment `equipment` field (backing the
- *   equipment_id FK in V15), plus assignedToId (Long), warehouseId/returnWarehouseId
+ *   equipment_id FK in V12), plus assignedToId (Long), warehouseId/returnWarehouseId
  *   (Long, FK to Warehouse),
  *   checkedOutAt / checkedInAt (Instant), conditionOut / conditionIn
  *   (String), createdBy (Long), createdAt (DB-defaulted, not set here), and a

@@ -2,13 +2,8 @@
 -- BC Construction Services — Sample Projects Data (dev profile only)
 -- Prices in Philippine Peso (PHP)
 -- Assumes app_user rows 1 and 2 already exist (from V21).
---
--- Numbered to run AFTER every real schema migration (currently up through
--- V27 in db/migration) rather than adjacent to it - dev-data must always
--- apply against the FINAL schema shape, not whatever shape existed when
--- this seed file was first written. If a new real schema migration is ever
--- added above V27, bump this file's version number (see V21's identical note
--- and its own history of getting this wrong once already).
+-- Runs against the schema as of V28, not the final one - see V21's header
+-- for the rules that keep dev-data valid as later migrations land.
 -- ============================================================
 
 -- ------------------------------------------------------------

@@ -42,8 +42,8 @@ import static org.mockito.Mockito.when;
  *   match the real @Named-qualified method.
  * - EquipmentCreateRequest fields: assetTag, name, category, serialNumber,
  *   purchasePrice, purchaseDate, purchaseVendor. It intentionally has no
- *   status/currentHolderId/currentSite/checkedOutAt fields — those are
- *   system-controlled per V15's schema and the create flow, not client input.
+ *   status/currentHolderId/checkedOutAt fields — those are
+ *   system-controlled per V12's schema and the create flow, not client input.
  * - EquipmentUpdateRequest fields: name, category, serialNumber,
  *   purchasePrice, purchaseDate, purchaseVendor — all nullable, only non-null
  *   fields applied (same "only non-null fields present are applied" pattern

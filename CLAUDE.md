@@ -53,7 +53,9 @@ across **all** of these before picking the next one:
 find . -path "*/db/migration/*.sql" -o -path "*/db/dev-data/*.sql"
 ```
 (`app/src/main/resources/db/dev-data` holds dev-only seed data, wired via a `flyway.locations`
-override in `application-dev.yaml` — never add that location to the prod profile.)
+override in `application-dev.yaml` — never add that location to the prod profile. Seeds are
+interleaved in the same sequence, so a later migration must not add a NOT NULL column without a
+DEFAULT to a seeded table — see `V21__seed_dev_inventory_data.sql`'s header.)
 
 Cross-module DB foreign keys are fine (all modules share one physical database) even when the
 referencing Java entity can't hold a `@ManyToOne` to the referenced module's entity — see below.

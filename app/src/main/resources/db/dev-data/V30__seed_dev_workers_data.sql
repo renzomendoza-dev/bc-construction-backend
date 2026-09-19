@@ -3,10 +3,8 @@
 -- Prices in Philippine Peso (PHP)
 -- Assumes app_user rows 1/2 (V21) and project rows 1/2/3 (V28) already exist.
 --
--- Numbered to run AFTER every real schema migration (currently up through
--- V29 in db/migration) — see V21's note on why dev-data must always apply
--- against the FINAL schema shape, not whatever existed when this file was
--- written.
+-- Runs against the schema as of V30, not the final one - see V21's header
+-- for the rules that keep dev-data valid as later migrations land.
 --
 -- These attendance rows are inserted directly (not through AttendanceService),
 -- so nothing here goes through its usual validation — the matching
