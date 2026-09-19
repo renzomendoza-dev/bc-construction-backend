@@ -30,11 +30,10 @@ At most one `Attendance` record per worker per day (`uq_attendance_worker_date`)
 attributed to one project per day for v1. `daysPresent` being a decimal handles half-days without
 needing multiple records per day.
 
-At most one active `WorkerProjectAssignment` per worker at a time, enforced only at the
-application layer (`WorkerProjectAssignmentService.assign`'s `existsByWorkerIdAndActiveTrue`
-pre-check, 409 on violation). A DB-level partial unique index (`WHERE active = true`) was skipped
-only because tests then ran on H2, which rejects that syntax; they now run on real Postgres, so a
-later migration could add it. See `WorkerProjectAssignment`'s own javadoc.
+At most one active `WorkerProjectAssignment` per worker at a time, enforced by a partial unique
+index (`uq_worker_project_assignment_active_worker`, `WHERE active = true`) and pre-checked by
+`WorkerProjectAssignmentService.assign`. Both paths return 409 — including two concurrent assigns
+for the same worker, where the index rejects whichever commits second.
 
 ## Cross-module design: a real service dependency, not just a lookup
 
@@ -157,7 +156,8 @@ sequence is shared and global across all modules) creates `worker` and `attendan
 `attendance.time_in`/`time_out` and a real FK from `attendance.project_expense_id` to `projects`'
 `project_expense` table (legal since `workers` already depends on `projects`, and that migration
 runs after `project_expense` exists). `V32__create_worker_project_assignment_table.sql` adds
-`worker_project_assignment`.
+`worker_project_assignment`, and `V33__add_unique_active_worker_project_assignment_index.sql` its
+one-active-assignment-per-worker index.
 
 Dev-only demo data (4 sample workers, one deactivated; a handful of `Attendance` rows against the
 existing `ACTIVE`/`ON_HOLD` seeded projects, with matching hand-inserted `ProjectExpense` rows)

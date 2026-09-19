@@ -12,6 +12,8 @@ import com.bcconstructionservices.workers.mapper.WorkerProjectAssignmentMapper;
 import com.bcconstructionservices.workers.repository.WorkerProjectAssignmentRepository;
 import com.bcconstructionservices.workers.repository.WorkerRepository;
 import lombok.RequiredArgsConstructor;
+import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -30,6 +32,8 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class WorkerProjectAssignmentService {
 
+    static final String ACTIVE_ASSIGNMENT_INDEX = "uq_worker_project_assignment_active_worker";
+
     private final WorkerProjectAssignmentRepository workerProjectAssignmentRepository;
     private final WorkerRepository workerRepository;
     private final ProjectService projectService;
@@ -39,6 +43,9 @@ public class WorkerProjectAssignmentService {
      * 409 if the worker already has an active assignment — matches
      * EquipmentService.checkOut's precedent (reject rather than silently
      * transfer). Deactivate the existing assignment first, then reassign.
+     * The pre-check covers the normal case; the V33 partial unique index
+     * catches two concurrent assigns that both pass it, and that violation is
+     * mapped to the same 409.
      */
     @Transactional
     public WorkerProjectAssignmentResponse assign(WorkerProjectAssignmentCreateRequest request) {
@@ -56,8 +63,25 @@ public class WorkerProjectAssignmentService {
                 .projectId(request.getProjectId())
                 .build();
 
-        WorkerProjectAssignment saved = workerProjectAssignmentRepository.save(assignment);
+        WorkerProjectAssignment saved;
+        try {
+            saved = workerProjectAssignmentRepository.save(assignment);
+        } catch (DataIntegrityViolationException ex) {
+            if (violates(ex, ACTIVE_ASSIGNMENT_INDEX)) {
+                throw new DuplicateActiveAssignmentException(worker.getId());
+            }
+            throw ex;
+        }
         return workerProjectAssignmentMapper.toResponse(saved);
+    }
+
+    private static boolean violates(DataIntegrityViolationException ex, String constraintName) {
+        for (Throwable cause = ex; cause != null; cause = cause.getCause()) {
+            if (cause instanceof ConstraintViolationException violation) {
+                return constraintName.equalsIgnoreCase(violation.getConstraintName());
+            }
+        }
+        return false;
     }
 
     /**

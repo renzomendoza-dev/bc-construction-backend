@@ -12,6 +12,7 @@ import com.bcconstructionservices.workers.exception.DuplicateActiveAssignmentExc
 import com.bcconstructionservices.workers.mapper.WorkerProjectAssignmentMapper;
 import com.bcconstructionservices.workers.repository.WorkerProjectAssignmentRepository;
 import com.bcconstructionservices.workers.repository.WorkerRepository;
+import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -19,10 +20,12 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Optional;
 
@@ -118,6 +121,32 @@ class WorkerProjectAssignmentServiceTest {
             assertThatExceptionOfType(DuplicateActiveAssignmentException.class)
                     .isThrownBy(() -> workerProjectAssignmentService.assign(request()));
             verify(workerProjectAssignmentRepository, never()).save(any());
+        }
+
+        @Test
+        void shouldMapAConcurrentAssignThatHitsTheUniqueIndexToDuplicateActiveAssignmentException() {
+            givenPreCheckPassesButSaveViolates(WorkerProjectAssignmentService.ACTIVE_ASSIGNMENT_INDEX);
+
+            assertThatExceptionOfType(DuplicateActiveAssignmentException.class)
+                    .isThrownBy(() -> workerProjectAssignmentService.assign(request()));
+        }
+
+        @Test
+        void shouldRethrowAnUnrelatedIntegrityViolationUnchanged() {
+            givenPreCheckPassesButSaveViolates("fk_some_other_constraint");
+
+            assertThatExceptionOfType(DataIntegrityViolationException.class)
+                    .isThrownBy(() -> workerProjectAssignmentService.assign(request()));
+        }
+
+        private void givenPreCheckPassesButSaveViolates(String constraintName) {
+            when(workerRepository.findById(WORKER_ID)).thenReturn(Optional.of(worker()));
+            when(projectService.getById(PROJECT_ID)).thenReturn(ProjectResponse.builder().id(PROJECT_ID).build());
+            when(workerProjectAssignmentRepository.existsByWorkerIdAndActiveTrue(WORKER_ID)).thenReturn(false);
+            when(workerProjectAssignmentRepository.save(any(WorkerProjectAssignment.class)))
+                    .thenThrow(new DataIntegrityViolationException("constraint violated",
+                            new ConstraintViolationException("constraint violated",
+                                    new SQLException("duplicate key"), constraintName)));
         }
     }
 

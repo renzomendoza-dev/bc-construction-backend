@@ -29,13 +29,10 @@ import java.time.Instant;
  * than gating anything: {@code AttendanceService} doesn't check this before
  * recording attendance for a worker, same as it never has.
  * <p>
- * At most one active assignment per worker at a time — enforced only at the
- * application layer ({@code WorkerProjectAssignmentService.assign}'s
- * {@code existsByWorkerIdAndActiveTrue} pre-check, 409 on violation), not by
- * a DB constraint. A partial unique index (the natural DB-level enforcement)
- * was skipped in V32 only because the test suite then ran on H2, which
- * rejects that syntax; tests now run on real Postgres, so a later migration
- * could add it. A worker moving
+ * At most one active assignment per worker at a time — enforced by the
+ * database (V33's partial unique index on worker_id WHERE active = true) and
+ * pre-checked by {@code WorkerProjectAssignmentService.assign}, which returns
+ * 409 either way. A worker moving
  * crews means deactivating the old assignment first, then creating a new
  * one; {@code assign} rejects (409) rather than silently reassigning,
  * matching {@code EquipmentService.checkOut}'s precedent of rejecting an

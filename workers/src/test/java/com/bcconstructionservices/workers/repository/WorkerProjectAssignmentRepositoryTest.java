@@ -5,13 +5,16 @@ import com.bcconstructionservices.workers.JpaAuditingTestConfig;
 import com.bcconstructionservices.workers.entity.Worker;
 import com.bcconstructionservices.workers.entity.WorkerProjectAssignment;
 import jakarta.persistence.EntityManager;
+import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
+import org.postgresql.util.PSQLException;
 import org.springframework.context.annotation.Import;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 
 import java.math.BigDecimal;
@@ -19,6 +22,7 @@ import java.time.LocalDate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -54,20 +58,50 @@ class WorkerProjectAssignmentRepositoryTest {
     }
 
     /**
-     * No DB-level partial unique index here (see WorkerProjectAssignment's
-     * javadoc) — the DB happily allows two active rows for the same
-     * worker; only WorkerProjectAssignmentService's existsByWorkerIdAndActiveTrue
-     * pre-check (covered by WorkerProjectAssignmentServiceTest) prevents it.
+     * V33's partial unique index: at most one active row per worker, any
+     * number of inactive ones.
      */
     @Nested
-    class MultipleActiveAssignmentsAllowedAtTheDbLayer {
+    class ActiveAssignmentUniqueIndex {
 
         @Test
-        void shouldAllowTwoActiveAssignmentsForTheSameWorkerAtTheRepositoryLevel() {
+        void shouldRejectASecondActiveAssignmentForTheSameWorker() {
             workerProjectAssignmentRepository.saveAndFlush(buildAssignment(projectA, true));
+
+            assertThatThrownBy(() -> workerProjectAssignmentRepository.saveAndFlush(buildAssignment(projectB, true)))
+                    .isInstanceOf(DataIntegrityViolationException.class)
+                    // WorkerProjectAssignmentService maps a violation to 409 by this name.
+                    .hasRootCauseInstanceOf(PSQLException.class)
+                    .satisfies(ex -> assertThat(constraintNameOf(ex))
+                            .isEqualTo("uq_worker_project_assignment_active_worker"));
+        }
+
+        @Test
+        void shouldAllowAnyNumberOfInactiveAssignmentsAlongsideOneActive() {
+            workerProjectAssignmentRepository.saveAndFlush(buildAssignment(projectA, false));
+            workerProjectAssignmentRepository.saveAndFlush(buildAssignment(projectB, false));
+
+            assertThatCode(() -> workerProjectAssignmentRepository.saveAndFlush(buildAssignment(projectA, true)))
+                    .doesNotThrowAnyException();
+        }
+
+        @Test
+        void shouldAllowReassignmentOnceTheActiveAssignmentIsDeactivated() {
+            WorkerProjectAssignment first = workerProjectAssignmentRepository.saveAndFlush(buildAssignment(projectA, true));
+            first.setActive(false);
+            workerProjectAssignmentRepository.saveAndFlush(first);
 
             assertThatCode(() -> workerProjectAssignmentRepository.saveAndFlush(buildAssignment(projectB, true)))
                     .doesNotThrowAnyException();
+        }
+
+        private String constraintNameOf(Throwable ex) {
+            for (Throwable cause = ex; cause != null; cause = cause.getCause()) {
+                if (cause instanceof ConstraintViolationException violation) {
+                    return violation.getConstraintName();
+                }
+            }
+            return null;
         }
     }
 
