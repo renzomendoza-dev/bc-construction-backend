@@ -312,6 +312,12 @@ same investigation, and now guard against the CAST bug for that endpoint.
 
 ## Testing
 
+- **CI**: `.github/workflows/ci.yml` runs `./mvnw -B verify` (every module, every test, plus
+  packaging the app jar) on each push to `main` and each pull request, on a stock GitHub Ubuntu
+  runner — no database service needed, since tests bring their own embedded Postgres. On failure
+  the run keeps every module's `target/surefire-reports/` as a downloadable `test-reports`
+  artifact. `mvnw` must stay executable in git (`git update-index --chmod=+x mvnw`) and LF
+  (`.gitattributes`), or the Linux runner can't start the build.
 - Service-layer: Mockito unit tests (`@ExtendWith(MockitoExtension.class)`), manual per-test
   stubbing (not blanket `@BeforeEach` stubs) to avoid tripping strict-stubbing checks.
 - Mapper tests: instantiate the generated `*Impl` directly (no Spring context), wrap as a
