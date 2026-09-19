@@ -205,10 +205,14 @@ class PurchaseReceiptServiceConfirmTest {
                 .thenReturn(new StockMovementResponse());
     }
 
-    /** Lenient default: no pre-existing ItemSupplier row for any item+supplier pair, unless overridden. */
+    /**
+     * Lenient default: lockOrCreate hands back a just-created link (no cost
+     * yet) for any item+supplier pair, unless overridden. Creation itself is
+     * the repository's job, covered against Postgres in ItemSupplierRepositoryTest.
+     */
     private void givenNoExistingItemSupplierRows() {
-        lenient().when(itemSupplierRepository.findByItemIdAndSupplierId(any(), eq(SUPPLIER_ID)))
-                .thenReturn(Optional.empty());
+        lenient().when(itemSupplierRepository.lockOrCreate(any(), eq(SUPPLIER_ID)))
+                .thenAnswer(invocation -> new ItemSupplier());
     }
 
     private void givenItemSupplierSaveEchoesArgument() {
@@ -349,8 +353,7 @@ class PurchaseReceiptServiceConfirmTest {
             givenAdjustStockSucceedsForAnyLine();
 
             ItemSupplier existing = existingItemSupplier(900L, cementItem, "230.00");
-            when(itemSupplierRepository.findByItemIdAndSupplierId(CEMENT_ITEM_ID, SUPPLIER_ID))
-                    .thenReturn(Optional.of(existing));
+            when(itemSupplierRepository.lockOrCreate(CEMENT_ITEM_ID, SUPPLIER_ID)).thenReturn(existing);
             givenItemSupplierSaveEchoesArgument();
 
             purchaseReceiptService.confirmPurchaseReceipt(RECEIPT_ID);
@@ -372,20 +375,18 @@ class PurchaseReceiptServiceConfirmTest {
             PurchaseReceipt receipt = buildReceipt(List.of(line));
             givenReceiptExists(receipt);
             givenAdjustStockSucceedsForAnyLine();
-            when(itemSupplierRepository.findByItemIdAndSupplierId(REBAR_ITEM_ID, SUPPLIER_ID))
-                    .thenReturn(Optional.empty());
+            ItemSupplier justCreated = new ItemSupplier();
+            when(itemSupplierRepository.lockOrCreate(REBAR_ITEM_ID, SUPPLIER_ID)).thenReturn(justCreated);
             givenItemSupplierSaveEchoesArgument();
 
             purchaseReceiptService.confirmPurchaseReceipt(RECEIPT_ID);
 
+            // The link is requested for exactly this item+supplier pair
+            // (lockOrCreate creates it if missing) and gets the line's cost.
             ArgumentCaptor<ItemSupplier> captor = ArgumentCaptor.forClass(ItemSupplier.class);
             verify(itemSupplierRepository).save(captor.capture());
-
-            ItemSupplier saved = captor.getValue();
-            assertThat(saved.getId()).isNull();
-            assertThat(saved.getItem()).isEqualTo(rebarItem);
-            assertThat(saved.getSupplier()).isEqualTo(activeSupplier);
-            assertThat(saved.getUnitCost()).isEqualByComparingTo(new BigDecimal("158.75"));
+            assertThat(captor.getValue()).isSameAs(justCreated);
+            assertThat(captor.getValue().getUnitCost()).isEqualByComparingTo(new BigDecimal("158.75"));
         }
 
         @Test
@@ -396,8 +397,7 @@ class PurchaseReceiptServiceConfirmTest {
             givenAdjustStockSucceedsForAnyLine();
 
             ItemSupplier existing = existingItemSupplier(900L, cementItem, "230.00");
-            when(itemSupplierRepository.findByItemIdAndSupplierId(CEMENT_ITEM_ID, SUPPLIER_ID))
-                    .thenReturn(Optional.of(existing));
+            when(itemSupplierRepository.lockOrCreate(CEMENT_ITEM_ID, SUPPLIER_ID)).thenReturn(existing);
             givenItemSupplierSaveEchoesArgument();
 
             purchaseReceiptService.confirmPurchaseReceipt(RECEIPT_ID);

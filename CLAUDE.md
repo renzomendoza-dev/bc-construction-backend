@@ -200,10 +200,12 @@ Each repository test asserts Postgres reports the name its service matches on. D
 - **Find-or-create tables are a different problem** and aren't mapped to 409: the row is looked
   up and reused, not chosen by the caller, so a race should reuse the winning row rather than
   reject. The pattern for that is Postgres's `INSERT ... ON CONFLICT (...) DO NOTHING` followed by
-  a re-read (`UserRepository.insertIfAbsent` for `app_user`, `InventoryStockRepository.insertIfAbsent`
-  for `inventory_stock`) — catching the violation instead doesn't work, because Postgres aborts
-  the transaction and the re-read would fail. `item_supplier` is still plain find-then-save and
-  can 500 on a race.
+  a re-read — catching the violation instead doesn't work, because Postgres aborts the
+  transaction and the re-read would fail. All three find-or-create tables use it:
+  `UserRepository.insertIfAbsent` (`app_user`), `InventoryStockRepository.insertIfAbsent`
+  (`inventory_stock`) and `ItemSupplierRepository.lockOrCreate` (`item_supplier`). The last two
+  also lock the row they return: if the caller then updates it, a concurrent writer can't be
+  silently overwritten, since Hibernate's `UPDATE` rewrites every column.
 - **A nullable column in a unique constraint needs `NULLS NOT DISTINCT`** (Postgres 15+), or
   rows with NULL there never conflict. V8's `inventory_stock (item, warehouse, location)`
   constraint allowed unlimited duplicate no-location rows until V34.
@@ -317,7 +319,7 @@ cache hits there, and they still protect any code path that runs outside an `/ap
 changes both read the same starting value and one silently overwrites the other. Reproduced on
 Postgres before the fix: 201 concurrent stock-ins of 1 ended at 57–97, concurrent withdrawals
 oversold, and concurrent first stock-ins created duplicate no-location rows that then broke every
-later adjustment for that item/warehouse. `StockConcurrencyIntegrationTest` (app) covers all of it
+later adjustment for that item/warehouse. `InventoryConcurrencyIntegrationTest` (app) covers all of it
 and fails when the locks are removed. Rules for any code touching stock quantities:
 
 - **Change quantities only through `InventoryService`**, which locks every row it changes
@@ -331,7 +333,9 @@ and fails when the locks are removed. Rules for any code touching stock quantiti
   (no-location bucket first, then by id). `transferStock` locks its two sides in that order rather
   than "from, then to"; `transferWarehouseStock` locks the lower warehouse id first;
   `TransferBatchService.submit` and `PurchaseReceiptService.confirmPurchaseReceipt` process lines
-  by item id. Opposite-direction transfers running at once then can't deadlock.
+  by item id. Opposite-direction transfers running at once then can't deadlock. Receipt
+  confirmation also locks each line's item-supplier link, always right after that item's stock
+  row(s), which keeps the same order.
 - **Hibernate's `UPDATE` writes every column**, so even a non-quantity change to a stock row (e.g.
   `updateReorderThreshold`) must lock too, or it can write back a stale quantity.
 - If Postgres still aborts a transaction on a lock conflict, inventory's `GlobalExceptionHandler`

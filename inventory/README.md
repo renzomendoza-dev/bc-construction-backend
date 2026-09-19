@@ -282,7 +282,10 @@ simultaneous adjustments, transfers, batch submits and receipt confirmations que
 than overwriting each other's quantities or overselling. Missing rows are created atomically, so
 two first stock-ins of the same item can't produce duplicate rows. Locks are always taken in the
 same order, so opposite-direction transfers can't deadlock. In the unlikely case Postgres still
-aborts one on a lock conflict, the endpoint returns **409 "nothing was saved, retry"**. See the
+aborts one on a lock conflict, the endpoint returns **409 "nothing was saved, retry"**.
+Item-supplier links (`POST /api/suppliers/link-item`, and the unit-cost update each confirmed
+receipt makes) are created and locked the same way, so linking the same item and supplier twice at
+once leaves one link, holding the SKU and cost from whichever request finished last. See the
 repo-root `CLAUDE.md`'s "Stock quantities: lock the row before changing it" for the rules any new
 stock code must follow.
 Dev-only demo data seeds live separately under `app/src/main/resources/db/dev-data` and are only

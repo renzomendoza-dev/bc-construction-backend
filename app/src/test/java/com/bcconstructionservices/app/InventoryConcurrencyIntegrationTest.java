@@ -1,10 +1,12 @@
 package com.bcconstructionservices.app;
 
+import com.bcconstructionservices.inventory.dto.ItemSupplierRequest;
 import com.bcconstructionservices.inventory.dto.StockAdjustmentRequest;
 import com.bcconstructionservices.inventory.dto.StockTransferRequest;
 import com.bcconstructionservices.inventory.entity.MovementType;
 import com.bcconstructionservices.inventory.exception.InsufficientStockException;
 import com.bcconstructionservices.inventory.service.InventoryService;
+import com.bcconstructionservices.inventory.service.SupplierService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,6 +14,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -24,11 +27,12 @@ import java.util.function.IntConsumer;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Concurrent stock changes through the real InventoryService on Postgres.
- * Before rows were locked, 201 concurrent stock-ins of 1 ended at quantities
- * like 57-97 (lost updates), and concurrent first stock-ins created up to 8
- * duplicate no-location rows, after which the item/warehouse was permanently
- * broken ("Query did not return a unique result").
+ * Concurrent inventory writes through the real services on Postgres.
+ * Before stock rows were locked, 201 concurrent stock-ins of 1 ended at
+ * quantities like 57-97 (lost updates), and concurrent first stock-ins created
+ * up to 8 duplicate no-location rows, after which the item/warehouse was
+ * permanently broken ("Query did not return a unique result"). Concurrent
+ * first item-supplier links failed with a 500 on uq_item_supplier_item_supplier.
  *
  * <p>Not @Transactional: every call must commit on its own for the races to
  * be real. Rows created here are deleted afterward, since every context in
@@ -40,21 +44,25 @@ import static org.assertj.core.api.Assertions.assertThat;
         "keycloak.admin.client-secret=test"
 })
 @ActiveProfiles("dev")
-class StockConcurrencyIntegrationTest {
+class InventoryConcurrencyIntegrationTest {
 
     private static final int THREADS = 8;
 
     @Autowired
     private InventoryService inventoryService;
     @Autowired
+    private SupplierService supplierService;
+    @Autowired
     private JdbcTemplate jdbc;
 
     private final List<Long> items = new ArrayList<>();
     private final List<Long> warehouses = new ArrayList<>();
+    private final List<Long> suppliers = new ArrayList<>();
 
     @AfterEach
     void deleteCreatedRows() {
         for (Long item : items) {
+            jdbc.update("DELETE FROM item_supplier WHERE item_id = ?", item);
             jdbc.update("DELETE FROM stock_movement WHERE item_id = ?", item);
             jdbc.update("DELETE FROM inventory_stock WHERE item_id = ?", item);
             jdbc.update("DELETE FROM item WHERE id = ?", item);
@@ -62,6 +70,18 @@ class StockConcurrencyIntegrationTest {
         for (Long warehouse : warehouses) {
             jdbc.update("DELETE FROM warehouse WHERE id = ?", warehouse);
         }
+        for (Long supplier : suppliers) {
+            jdbc.update("DELETE FROM supplier WHERE id = ?", supplier);
+        }
+    }
+
+    private long newSupplier() {
+        long id = jdbc.queryForObject("""
+                INSERT INTO supplier (name, active, created_at, updated_at)
+                VALUES ('Concurrency Test Supplier', true, now(), now()) RETURNING id
+                """, Long.class);
+        suppliers.add(id);
+        return id;
     }
 
     private long newItem() {
@@ -167,6 +187,29 @@ class StockConcurrencyIntegrationTest {
 
         assertThat(failures).hasSize(THREADS * 10 - 50).allMatch(InsufficientStockException.class::isInstance);
         assertThat(quantityOf(item, warehouse)).isZero();
+    }
+
+    @Test
+    void concurrentFirstLinksOfTheSameItemAndSupplierCreateOneRowWithoutErrors() throws Exception {
+        for (int round = 0; round < 10; round++) {
+            long item = newItem();
+            long supplier = newSupplier();
+
+            // Each thread links with its own cost; whichever commits last wins.
+            List<Throwable> failures = runConcurrently(1, t -> supplierService.linkItemToSupplier(
+                    ItemSupplierRequest.builder()
+                            .itemId(item).supplierId(supplier)
+                            .supplierSku("SKU-" + t).unitCost(BigDecimal.valueOf(100 + t)).build()));
+
+            assertThat(failures).as("round %d", round).isEmpty();
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM item_supplier WHERE item_id = ? AND supplier_id = ?",
+                    Integer.class, item, supplier)).as("round %d rows", round).isEqualTo(1);
+            // Both columns come from the same request: a lock-less UPDATE could mix them.
+            Integer costThread = jdbc.queryForObject(
+                    "SELECT unit_cost::int - 100 FROM item_supplier WHERE item_id = ?", Integer.class, item);
+            assertThat(jdbc.queryForObject("SELECT supplier_sku FROM item_supplier WHERE item_id = ?",
+                    String.class, item)).as("round %d sku matches cost", round).isEqualTo("SKU-" + costThread);
+        }
     }
 
     @Test

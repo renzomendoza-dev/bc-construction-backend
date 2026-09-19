@@ -152,4 +152,40 @@ class ItemSupplierRepositoryTest {
             assertThat(result).isEmpty();
         }
     }
+
+    // ---------------------------------------------------------------
+    // lockOrCreate (atomic find-or-create)
+    // ---------------------------------------------------------------
+
+    @Nested
+    class LockOrCreateTests {
+
+        @Test
+        void shouldCreateTheLinkWithNoSkuOrCostWhenMissing() {
+            Item item = persistItem("SKU-970", "Tie Wire #16");
+            Supplier supplier = persistSupplier("Pampanga Builders Depot");
+
+            ItemSupplier link = itemSupplierRepository.lockOrCreate(item.getId(), supplier.getId());
+
+            assertThat(link.getId()).isNotNull();
+            assertThat(link.getItem().getId()).isEqualTo(item.getId());
+            assertThat(link.getSupplier().getId()).isEqualTo(supplier.getId());
+            assertThat(link.getSupplierSku()).isNull();
+            assertThat(link.getUnitCost()).isNull();
+        }
+
+        @Test
+        void shouldReturnTheExistingLinkUnchangedWithoutADuplicate() {
+            Item item = persistItem("SKU-971", "Coco Lumber 2x2");
+            Supplier supplier = persistSupplier("Nueva Ecija Lumber");
+            ItemSupplier existing = itemSupplierRepository.saveAndFlush(buildItemSupplier(item, supplier, "118.00"));
+            entityManager.clear();
+
+            ItemSupplier link = itemSupplierRepository.lockOrCreate(item.getId(), supplier.getId());
+
+            assertThat(link.getId()).isEqualTo(existing.getId());
+            assertThat(link.getUnitCost()).isEqualByComparingTo(new BigDecimal("118.00"));
+            assertThat(itemSupplierRepository.findByItemIdWithSupplier(item.getId())).hasSize(1);
+        }
+    }
 }

@@ -77,11 +77,11 @@ public class SupplierService {
     /**
      * Creates the item-supplier link if it doesn't yet exist for this
      * item+supplier pair, otherwise updates the existing row's supplierSku
-     * and unitCost in place rather than creating a duplicate. Either way,
-     * the already-loaded item/supplier are (re)attached before saving: for a
-     * new row that's what itemSupplierMapper.toEntity() left unmapped, and
-     * for an existing row it avoids itemSupplierMapper.toResponse() forcing
-     * a lazy-load of item/supplier afterward.
+     * and unitCost in place rather than creating a duplicate. The row comes
+     * from {@link ItemSupplierRepository#lockOrCreate}, so two concurrent
+     * links of the same pair can't collide, and the later one simply wins.
+     * The already-loaded item/supplier are attached before saving so
+     * itemSupplierMapper.toResponse() doesn't lazy-load them afterward.
      */
     @Transactional
     public ItemSupplierResponse linkItemToSupplier(ItemSupplierRequest request) {
@@ -97,15 +97,9 @@ public class SupplierService {
             throw new InactiveResourceException("Supplier", supplier.getId());
         }
 
-        ItemSupplier itemSupplier = itemSupplierRepository
-                .findByItemIdAndSupplierId(item.getId(), supplier.getId())
-                .map(existing -> {
-                    existing.setSupplierSku(request.getSupplierSku());
-                    existing.setUnitCost(request.getUnitCost());
-                    return existing;
-                })
-                .orElseGet(() -> itemSupplierMapper.toEntity(request));
-
+        ItemSupplier itemSupplier = itemSupplierRepository.lockOrCreate(item.getId(), supplier.getId());
+        itemSupplier.setSupplierSku(request.getSupplierSku());
+        itemSupplier.setUnitCost(request.getUnitCost());
         itemSupplier.setItem(item);
         itemSupplier.setSupplier(supplier);
 

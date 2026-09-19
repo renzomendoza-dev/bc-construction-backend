@@ -194,8 +194,9 @@ public class PurchaseReceiptService {
 
         auditorAware.getCurrentAuditor();
 
-        // Item-id order keeps stock-row locks in InventoryService's global lock
-        // order, so two confirmations sharing items can't deadlock.
+        // Item-id order keeps every lock taken here in one global order — per
+        // item, its stock row(s) and then its item-supplier link — so two
+        // confirmations sharing items can't deadlock.
         for (PurchaseReceiptLine line : receipt.getLines().stream()
                 .sorted(Comparator.comparing(l -> l.getItem().getId())).toList()) {
             StockAdjustmentRequest adjustment = StockAdjustmentRequest.builder()
@@ -210,11 +211,7 @@ public class PurchaseReceiptService {
             inventoryService.adjustStock(adjustment);
 
             ItemSupplier itemSupplier = itemSupplierRepository
-                    .findByItemIdAndSupplierId(line.getItem().getId(), receipt.getSupplier().getId())
-                    .orElseGet(() -> ItemSupplier.builder()
-                            .item(line.getItem())
-                            .supplier(receipt.getSupplier())
-                            .build());
+                    .lockOrCreate(line.getItem().getId(), receipt.getSupplier().getId());
             itemSupplier.setUnitCost(line.getUnitCost());
             itemSupplierRepository.save(itemSupplier);
         }
