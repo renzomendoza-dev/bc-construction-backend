@@ -12,6 +12,7 @@ import com.bcconstructionservices.projects.exception.ResourceNotFoundException;
 import com.bcconstructionservices.projects.mapper.ProjectMapper;
 import com.bcconstructionservices.projects.repository.ProjectRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -25,6 +26,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class ProjectService {
+
+    // Postgres's default name for V27's inline "code ... UNIQUE".
+    static final String CODE_CONSTRAINT = "project_code_key";
 
     private final ProjectRepository projectRepository;
     private final ProjectMapper projectMapper;
@@ -42,7 +46,16 @@ public class ProjectService {
 
         Project project = projectMapper.toEntity(request);
 
-        Project saved = projectRepository.save(project);
+        Project saved;
+        try {
+            saved = projectRepository.save(project);
+        } catch (DataIntegrityViolationException ex) {
+            // Two concurrent creates can both pass existsByCode above.
+            if (ConstraintViolations.violates(ex, CODE_CONSTRAINT)) {
+                throw new DuplicateResourceException("Project", "code", request.getCode());
+            }
+            throw ex;
+        }
         return projectMapper.toResponse(saved);
     }
 

@@ -21,6 +21,7 @@ import com.bcconstructionservices.inventory.entity.WarehouseType;
 import com.bcconstructionservices.inventory.repository.WarehouseRepository;
 import com.bcconstructionservices.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,6 +33,9 @@ import java.util.List;
 @RequiredArgsConstructor
 @Transactional
 public class EquipmentService {
+
+    // Postgres's default name for V12's inline "asset_tag ... UNIQUE".
+    static final String ASSET_TAG_CONSTRAINT = "equipment_asset_tag_key";
 
     private final EquipmentRepository equipmentRepository;
     private final EquipmentAssignmentRepository equipmentAssignmentRepository;
@@ -51,7 +55,15 @@ public class EquipmentService {
         equipment.setStatus(EquipmentStatus.AVAILABLE);
         equipment.setCurrentWarehouseId(warehouse.getId());
 
-        return equipmentRepository.save(equipment);
+        try {
+            return equipmentRepository.save(equipment);
+        } catch (DataIntegrityViolationException ex) {
+            // Two concurrent creates can both pass the findByAssetTag check above.
+            if (ConstraintViolations.violates(ex, ASSET_TAG_CONSTRAINT)) {
+                throw new DuplicateAssetTagException(request.getAssetTag());
+            }
+            throw ex;
+        }
     }
 
     /**

@@ -1,5 +1,6 @@
 package com.bcconstructionservices.inventory.repository;
 
+import com.bcconstructionservices.inventory.service.ConstraintViolations;
 import com.bcconstructionservices.inventory.InventoryTestConfig;
 import com.bcconstructionservices.inventory.entity.Item;
 import com.bcconstructionservices.inventory.entity.ItemImage;
@@ -114,7 +115,10 @@ class ItemRepositoryTest {
             // so the constraint is verified at the DB level, not just via
             // application code.
             assertThatThrownBy(() -> itemRepository.saveAndFlush(duplicate))
-                    .isInstanceOf(DataIntegrityViolationException.class);
+                    .isInstanceOf(DataIntegrityViolationException.class)
+                    // ItemService maps a violation to 409 by this name.
+                    .satisfies(ex -> assertThat(ConstraintViolations
+                            .violates((DataIntegrityViolationException) ex, "uq_item_sku")).isTrue());
         }
     }
 

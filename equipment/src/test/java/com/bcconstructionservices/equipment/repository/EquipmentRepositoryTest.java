@@ -1,5 +1,6 @@
 package com.bcconstructionservices.equipment.repository;
 
+import com.bcconstructionservices.equipment.service.ConstraintViolations;
 import com.bcconstructionservices.equipment.JpaAuditingTestConfig;
 import com.bcconstructionservices.equipment.entity.Equipment;
 import com.bcconstructionservices.equipment.entity.EquipmentStatus;
@@ -108,10 +109,13 @@ class EquipmentRepositoryTest {
                 .status(EquipmentStatus.AVAILABLE)
                 .build();
 
-        assertThrows(DataIntegrityViolationException.class, () -> {
+        DataIntegrityViolationException ex = assertThrows(DataIntegrityViolationException.class, () -> {
             equipmentRepository.save(duplicate);
             entityManager.flush(); // force the unique constraint check now
         });
+        // EquipmentService maps a violation to 409 by this name (Postgres's
+        // default for V12's inline UNIQUE on asset_tag).
+        assertThat(ConstraintViolations.violates(ex, "equipment_asset_tag_key")).isTrue();
     }
 
     @Test

@@ -13,6 +13,9 @@ import com.bcconstructionservices.equipment.exception.InvalidEquipmentStatusExce
 import com.bcconstructionservices.equipment.exception.InvalidWarehouseTypeException;
 import com.bcconstructionservices.equipment.exception.NoOpenAssignmentException;
 import com.bcconstructionservices.equipment.exception.WarehouseNotFoundException;
+import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.dao.DataIntegrityViolationException;
+import java.sql.SQLException;
 import com.bcconstructionservices.equipment.mapper.EquipmentMapper;
 import com.bcconstructionservices.equipment.repository.EquipmentAssignmentRepository;
 import com.bcconstructionservices.equipment.repository.EquipmentRepository;
@@ -181,6 +184,26 @@ class EquipmentServiceTest {
         assertThat(saved.getStatus()).isEqualTo(EquipmentStatus.AVAILABLE);
         assertThat(saved.getCurrentWarehouseId()).isEqualTo(1L);
         assertThat(result.getStatus()).isEqualTo(EquipmentStatus.AVAILABLE);
+    }
+
+    @Test
+    void create_throwsDuplicateAssetTagException_whenAConcurrentCreateHitsTheAssetTagConstraint() {
+        // Both requests pass findByAssetTag; equipment_asset_tag_key rejects the second.
+        EquipmentCreateRequest request = EquipmentCreateRequest.builder()
+                .assetTag("EQ-2026-0009")
+                .name("Bosch Rotary Hammer")
+                .warehouseId(1L)
+                .build();
+
+        when(equipmentRepository.findByAssetTag("EQ-2026-0009")).thenReturn(Optional.empty());
+        when(warehouseRepository.findById(1L)).thenReturn(Optional.of(mainWarehouse));
+        when(equipmentMapper.toEntity(request)).thenReturn(Equipment.builder().assetTag("EQ-2026-0009").build());
+        when(equipmentRepository.save(any(Equipment.class)))
+                .thenThrow(new DataIntegrityViolationException("constraint violated",
+                        new ConstraintViolationException("constraint violated",
+                                new SQLException("duplicate key"), EquipmentService.ASSET_TAG_CONSTRAINT)));
+
+        assertThrows(DuplicateAssetTagException.class, () -> equipmentService.create(request));
     }
 
     @Test

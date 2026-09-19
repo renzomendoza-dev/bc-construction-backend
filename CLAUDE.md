@@ -175,11 +175,31 @@ has cost real frontend debugging time before.
 `exists...` pre-check gives the clean 409 in the normal case, but two concurrent requests can both
 pass it; the DB unique constraint/index then rejects the second insert. Catch
 `DataIntegrityViolationException` around that insert and map it to the same exception as the
-pre-check — matched by constraint name via `ConstraintViolations.violates` (workers), so unrelated
-integrity errors still surface unchanged. Otherwise the race is an undifferentiated 500. See
-`AttendanceService.insert` (`uq_attendance_worker_date`) and `WorkerProjectAssignmentService.assign`
-(`uq_worker_project_assignment_active_worker`); their repository tests assert Postgres reports the
-constraint name the service matches on.
+pre-check — matched by constraint name via `ConstraintViolations.violates`, so unrelated
+integrity errors still surface unchanged. Otherwise the race is an undifferentiated 500.
+
+Every module with such a rule has its own small `service/ConstraintViolations` copy (modules don't
+share code). Applied to every user-chosen unique value today:
+
+| Rule | Constraint | Where |
+|---|---|---|
+| Attendance per worker/day | `uq_attendance_worker_date` | `AttendanceService.insert` |
+| One active assignment per worker | `uq_worker_project_assignment_active_worker` | `WorkerProjectAssignmentService.assign` |
+| Item SKU (create **and** update) | `uq_item_sku` | `ItemService.saveCheckingSku` |
+| Warehouse code | `uq_warehouse_code` | `WarehouseService.createWarehouse` |
+| Storage location code per warehouse | `uq_storage_location_warehouse_code` | `WarehouseService.addStorageLocation` |
+| Equipment asset tag | `equipment_asset_tag_key` | `EquipmentService.create` |
+| Project code | `project_code_key` | `ProjectService.createProject` |
+
+Each repository test asserts Postgres reports the name its service matches on. Details that matter:
+- **Name constraints explicitly** (`CONSTRAINT uq_x UNIQUE (...)`) in new migrations. An inline
+  `col ... UNIQUE` gets Postgres's default `<table>_<column>_key`, which the last two rely on.
+- **Updates must flush inside the `try`.** An `UPDATE` only reaches the database on flush, so
+  without one the violation surfaces at commit, outside the catch (see `saveCheckingSku`). Mind
+  the reentrant auto-flush bug below before flushing an audited entity with a cascade collection.
+- **Find-or-create tables are a different problem** and aren't mapped to 409:
+  `inventory_stock`, `item_supplier` and `app_user.keycloak_id` are looked up and reused, not
+  chosen by the caller, so a race there should reuse the winning row rather than reject.
 
 ## Permissions
 

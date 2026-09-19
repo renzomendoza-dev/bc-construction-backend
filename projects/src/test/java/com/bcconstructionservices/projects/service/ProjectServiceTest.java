@@ -12,6 +12,7 @@ import com.bcconstructionservices.projects.exception.ResourceNotFoundException;
 import com.bcconstructionservices.projects.mapper.ProjectMapperImpl;
 import com.bcconstructionservices.projects.repository.ProjectRepository;
 import com.bcconstructionservices.user.service.UserLookupHelper;
+import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -21,12 +22,14 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -118,6 +121,19 @@ class ProjectServiceTest {
                     .isThrownBy(() -> projectService.createProject(createRequest("PRJ-2026-001")));
 
             verify(projectRepository, never()).save(any());
+        }
+
+        @Test
+        void shouldThrowDuplicateResourceExceptionWhenAConcurrentCreateHitsTheCodeConstraint() {
+            // Both requests pass existsByCode; project_code_key rejects the second.
+            when(projectRepository.existsByCode("PRJ-2026-001")).thenReturn(false);
+            when(projectRepository.save(any(Project.class)))
+                    .thenThrow(new DataIntegrityViolationException("constraint violated",
+                            new ConstraintViolationException("constraint violated",
+                                    new SQLException("duplicate key"), ProjectService.CODE_CONSTRAINT)));
+
+            assertThatExceptionOfType(DuplicateResourceException.class)
+                    .isThrownBy(() -> projectService.createProject(createRequest("PRJ-2026-001")));
         }
     }
 

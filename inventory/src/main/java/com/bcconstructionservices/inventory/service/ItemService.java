@@ -10,6 +10,7 @@ import com.bcconstructionservices.inventory.mapper.ItemMapper;
 import com.bcconstructionservices.inventory.repository.ItemImageRepository;
 import com.bcconstructionservices.inventory.repository.ItemRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -33,6 +34,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ItemService {
 
+    static final String SKU_CONSTRAINT = "uq_item_sku";
+
     private final ItemRepository itemRepository;
     private final ItemImageRepository itemImageRepository;
     private final ItemMapper itemMapper;
@@ -45,7 +48,7 @@ public class ItemService {
         }
 
         Item item = itemMapper.toEntity(request);
-        Item saved = itemRepository.save(item);
+        Item saved = saveCheckingSku(item);
         return itemMapper.toResponse(saved);
     }
 
@@ -63,8 +66,29 @@ public class ItemService {
 
         itemMapper.updateEntityFromRequest(request, item);
 
-        Item saved = itemRepository.save(item);
+        Item saved = saveCheckingSku(item);
         return itemMapper.toResponse(saved);
+    }
+
+    /**
+     * The existsBySku pre-checks cover the normal case; two concurrent
+     * requests claiming the same SKU can both pass them, and uq_item_sku then
+     * rejects the second. That maps to the same 409. The flush makes an
+     * UPDATE hit the constraint here rather than later at commit, outside
+     * this try. (Item isn't audited, so flushing it can't trigger the
+     * reentrant auto-flush bug described in CLAUDE.md.)
+     */
+    private Item saveCheckingSku(Item item) {
+        try {
+            Item saved = itemRepository.save(item);
+            itemRepository.flush();
+            return saved;
+        } catch (DataIntegrityViolationException ex) {
+            if (ConstraintViolations.violates(ex, SKU_CONSTRAINT)) {
+                throw new DuplicateResourceException("Item", "sku", item.getSku());
+            }
+            throw ex;
+        }
     }
 
     @Transactional(readOnly = true)

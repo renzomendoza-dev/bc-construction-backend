@@ -1,5 +1,6 @@
 package com.bcconstructionservices.inventory.repository;
 
+import com.bcconstructionservices.inventory.service.ConstraintViolations;
 import com.bcconstructionservices.inventory.entity.Warehouse;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -62,7 +63,10 @@ class WarehouseRepositoryTest {
             Warehouse duplicate = validWarehouse("WH-NORTH", "A Completely Different Name");
 
             assertThatThrownBy(() -> warehouseRepository.saveAndFlush(duplicate))
-                    .isInstanceOf(DataIntegrityViolationException.class);
+                    .isInstanceOf(DataIntegrityViolationException.class)
+                    // WarehouseService maps a violation to 409 by this name.
+                    .satisfies(ex -> assertThat(ConstraintViolations
+                            .violates((DataIntegrityViolationException) ex, "uq_warehouse_code")).isTrue());
         }
     }
 

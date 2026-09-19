@@ -10,6 +10,7 @@ import com.bcconstructionservices.inventory.mapper.WarehouseMapper;
 import com.bcconstructionservices.inventory.repository.StorageLocationRepository;
 import com.bcconstructionservices.inventory.repository.WarehouseRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -27,10 +28,18 @@ import java.util.List;
 @RequiredArgsConstructor
 public class WarehouseService {
 
+    static final String CODE_CONSTRAINT = "uq_warehouse_code";
+    static final String LOCATION_CODE_CONSTRAINT = "uq_storage_location_warehouse_code";
+
     private final WarehouseRepository warehouseRepository;
     private final StorageLocationRepository storageLocationRepository;
     private final WarehouseMapper warehouseMapper;
     private final StorageLocationMapper storageLocationMapper;
+
+    private static DuplicateResourceException duplicateLocation(String code, Long warehouseId) {
+        return new DuplicateResourceException(
+                "StorageLocation with code '" + code + "' already exists in warehouse " + warehouseId);
+    }
 
     @Transactional
     public WarehouseResponse createWarehouse(WarehouseCreateRequest request) {
@@ -39,7 +48,16 @@ public class WarehouseService {
         }
 
         Warehouse warehouse = warehouseMapper.toEntity(request);
-        Warehouse saved = warehouseRepository.save(warehouse);
+        Warehouse saved;
+        try {
+            saved = warehouseRepository.save(warehouse);
+        } catch (DataIntegrityViolationException ex) {
+            // Two concurrent creates can both pass existsByCode above.
+            if (ConstraintViolations.violates(ex, CODE_CONSTRAINT)) {
+                throw new DuplicateResourceException("Warehouse", "code", request.getCode());
+            }
+            throw ex;
+        }
         return warehouseMapper.toResponse(saved);
     }
 
@@ -76,9 +94,7 @@ public class WarehouseService {
                 .orElseThrow(() -> new ResourceNotFoundException("Warehouse", request.getWarehouseId()));
 
         if (storageLocationRepository.existsByWarehouseIdAndCode(warehouse.getId(), request.getCode())) {
-            throw new DuplicateResourceException(
-                    "StorageLocation with code '" + request.getCode()
-                            + "' already exists in warehouse " + warehouse.getId());
+            throw duplicateLocation(request.getCode(), warehouse.getId());
         }
 
         // storageLocationMapper.toEntity leaves `warehouse` unmapped (it only has
@@ -86,7 +102,16 @@ public class WarehouseService {
         StorageLocation location = storageLocationMapper.toEntity(request);
         location.setWarehouse(warehouse);
 
-        StorageLocation saved = storageLocationRepository.save(location);
+        StorageLocation saved;
+        try {
+            saved = storageLocationRepository.save(location);
+        } catch (DataIntegrityViolationException ex) {
+            // Two concurrent creates can both pass the pre-check above.
+            if (ConstraintViolations.violates(ex, LOCATION_CODE_CONSTRAINT)) {
+                throw duplicateLocation(request.getCode(), warehouse.getId());
+            }
+            throw ex;
+        }
         return storageLocationMapper.toResponse(saved);
     }
 

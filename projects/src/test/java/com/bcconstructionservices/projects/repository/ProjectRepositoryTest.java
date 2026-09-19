@@ -1,5 +1,6 @@
 package com.bcconstructionservices.projects.repository;
 
+import com.bcconstructionservices.projects.service.ConstraintViolations;
 import com.bcconstructionservices.projects.entity.Project;
 import com.bcconstructionservices.projects.entity.ProjectStatus;
 import jakarta.persistence.EntityManager;
@@ -62,7 +63,11 @@ class ProjectRepositoryTest {
             Project duplicate = buildProject("PRJ-002", ProjectStatus.ACTIVE);
 
             assertThatThrownBy(() -> projectRepository.saveAndFlush(duplicate))
-                    .isInstanceOf(DataIntegrityViolationException.class);
+                    .isInstanceOf(DataIntegrityViolationException.class)
+                    // ProjectService maps a violation to 409 by this name
+                    // (Postgres's default for V27's inline UNIQUE on code).
+                    .satisfies(ex -> assertThat(ConstraintViolations
+                            .violates((DataIntegrityViolationException) ex, "project_code_key")).isTrue());
         }
     }
 
